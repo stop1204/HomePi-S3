@@ -1,0 +1,9 @@
+# pip freeze > requirements.txt
+# pip install -r requirements.txt
+
+SpeechRecognition>=3.10.4
+# SpeechRecognition requirements
+# if using Homebrew on OS X, you can install PortAudio with the following command:
+# brew install portaudio
+PyAudio>=0.2.11
+pocketsphinx>=5.0.3
