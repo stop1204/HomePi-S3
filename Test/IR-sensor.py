@@ -1,66 +1,82 @@
-# this is for test the IR(infrared receiver) sensor
-# detect the running environment, if running on macOS use the GOIOzero library, otherwise use the RPi.GPIO library
+# This script tests the IR (infrared receiver) sensor.
+# It detects the running environment; if running on macOS, it connects to the pigpio daemon on the Raspberry Pi.
+# If running on Linux (Raspberry Pi), it uses the local pigpio library.
 
 import platform
-from DeviceInfo import device_info
 import time
+from DeviceInfo import device_info  # Assumed to provide device_info.get_host_ip()
+import pigpio
 
-if platform.system() == 'Darwin':
-    from gpiozero import DigitalInputDevice  # remote GPIO for macOS
-    from gpiozero.pins.pigpio import PiGPIOFactory
-    print("Running on macOS, using gpiozero.")
-elif platform.system() == 'Linux':
-    import pigpio  # local GPIO for Raspberry Pi
-    print("Running on Raspberry Pi, using pigpio.")
+
 
 class IRReceiver:
     def __init__(self, pin):
         self.pin = pin
         if platform.system() == 'Darwin':
-            self.factory = PiGPIOFactory(host=device_info.get_host_ip())
-            self.ir_sensor = DigitalInputDevice(pin,pin_factory=self.factory)
+            # Connect to the pigpio daemon on the Raspberry Pi
+            self.pi = pigpio.pi(device_info.get_host_ip())
+            if not self.pi.connected:
+                raise RuntimeError("Failed to connect to pigpio daemon. (macOS)")
         else:
-            self.pi = pigpio.pi()  # 初始化 pigpio
+            # Initialize pigpio locally on Raspberry Pi
+            self.pi = pigpio.pi()
             if not self.pi.connected:
                 raise RuntimeError("Failed to connect to pigpio daemon.")
-            self.pi.set_mode(pin, pigpio.INPUT)
-            self.last_tick = 0
+        # Set the pin as input
+        self.pi.set_mode(self.pin, pigpio.INPUT)
+
+        # Initialize variables for IR signal processing
+        self.high_tick = 0
+        self.gap = 10000  # Microseconds
+        self.code_timeout = 50000  # Microseconds
+        self.code = []
+        self.in_code = False
+
+        # Register the callback function
+        self.cb = self.pi.callback(self.pin, pigpio.EITHER_EDGE, self.ir_callback)
 
     def listen(self):
-        print("Listening for IR signals...")
+        print("Listening for IR signals... Press Ctrl+C to stop.")
 
         try:
             while True:
-                if platform.system() == 'Darwin':
-                    if self.ir_sensor.is_active:
-                        signal = self.decode_ir_signal()  # virtual method
-                        self.label_signal(signal)
-                else:
-                    self.pi.callback(self.pin, pigpio.FALLING_EDGE, self.ir_callback)
-                time.sleep(0.1)
+                time.sleep(1)
         except KeyboardInterrupt:
             print("IR signal listening stopped.")
         finally:
-            if platform.system() != 'Darwin':
-                self.pi.stop()  # cleanup pigpio resources
+            self.cancel()
+            self.pi.stop()  # Clean up pigpio resources
 
     def ir_callback(self, gpio, level, tick):
-        # use pigpio to detect IR signal
-        if level == pigpio.FALLING_EDGE:
-            signal = self.decode_ir_signal()
-            self.label_signal(signal)
-
-    def decode_ir_signal(self):
-        # virtual method to decode IR signal
-        return int(time.time()) % 20  # use current time as a dummy signal
-
-    def label_signal(self, signal):
-        if 1 <= signal <= 10:
-            print(f"Received signal: {signal}")
+        if level != pigpio.TIMEOUT:
+            edge = tick
+            if self.high_tick != 0:
+                duration = pigpio.tickDiff(self.high_tick, edge)
+                if duration > self.gap:
+                    if self.in_code:
+                        # Process the received code
+                        self.process_code(self.code)
+                        self.code = []
+                    self.in_code = True
+                if self.in_code:
+                    self.code.append(duration)
+            self.high_tick = edge
         else:
-            print(f"Received signal: {signal}, labeled as 'others'")
+            # Timeout handling
+            if self.in_code:
+                self.process_code(self.code)
+                self.code = []
+                self.in_code = False
 
-# 主程序
+    def process_code(self, code):
+        print("Received code:")
+        print(code)
+        # Add code decoding logic here
+
+    def cancel(self):
+        self.cb.cancel()
+
+# Main program
 if __name__ == "__main__":
-    ir_receiver = IRReceiver(pin=17)  # assume the IR receiver is connected to GPIO 17
+    ir_receiver = IRReceiver(pin=17)  # Assume the IR receiver is connected to GPIO 17
     ir_receiver.listen()
