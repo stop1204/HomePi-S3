@@ -2,13 +2,8 @@
 # detect the running environment, if running on macOS use the GOIOzero library, otherwise use the RPi.GPIO library
 
 import platform
-from Library.DeviceInfo import device_info
+from DeviceInfo import device_info
 import time
-import sys
-import os
-
-# add the parent directory to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 if platform.system() == 'Darwin':
     from gpiozero import DigitalInputDevice  # remote GPIO for macOS
@@ -38,7 +33,7 @@ class IRReceiver:
             while True:
                 if platform.system() == 'Darwin':
                     if self.ir_sensor.is_active:
-                        signal = self.decode_ir_signal()  # 模擬信號解碼
+                        signal = self.decode_ir_signal()  # virtual method
                         self.label_signal(signal)
                 else:
                     self.pi.callback(self.pin, pigpio.FALLING_EDGE, self.ir_callback)
@@ -47,17 +42,17 @@ class IRReceiver:
             print("IR signal listening stopped.")
         finally:
             if platform.system() != 'Darwin':
-                self.pi.stop()  # 結束 pigpio 會話
+                self.pi.stop()  # cleanup pigpio resources
 
     def ir_callback(self, gpio, level, tick):
-        # 使用 pigpio 在 Raspberry Pi 上處理 IR 信號
+        # use pigpio to detect IR signal
         if level == pigpio.FALLING_EDGE:
             signal = self.decode_ir_signal()
             self.label_signal(signal)
 
     def decode_ir_signal(self):
-        # 模擬解碼邏輯，實際情況中需要實現具體的信號解碼邏輯
-        return int(time.time()) % 20  # 使用時間模擬信號變化，返回 1 到 20 的值
+        # virtual method to decode IR signal
+        return int(time.time()) % 20  # use current time as a dummy signal
 
     def label_signal(self, signal):
         if 1 <= signal <= 10:
@@ -67,5 +62,5 @@ class IRReceiver:
 
 # 主程序
 if __name__ == "__main__":
-    ir_receiver = IRReceiver(pin=17)  # 假設 IR 接收器連接到 GPIO 17 引腳
+    ir_receiver = IRReceiver(pin=17)  # assume the IR receiver is connected to GPIO 17
     ir_receiver.listen()
