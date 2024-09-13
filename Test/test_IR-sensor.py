@@ -1,36 +1,61 @@
-import pigpio
+# This script tests the IR (infrared receiver) sensor.
+# It detects the running environment; if running on macOS, it connects to the pigpio daemon on the Raspberry Pi.
+# If running on Linux (Raspberry Pi), it uses the local pigpio library.
+
+import platform
 import time
-from  DeviceInfo import  device_info
-# 替换为树莓派的 IP 地址
-RASPBERRY_PI_IP = device_info.get_host_ip()
+from DeviceInfo import device_info  # Assumed to provide device_info.get_host_ip()
+import pigpio
 
-# 红外接收器连接的 GPIO 引脚（使用 BCM 编号）
-IR_PIN = 17
+import lirc
 
+lirc.init("test")
 class IRReceiver:
-    def __init__(self, pi, pin):
-        self.pi = pi
+    def __init__(self, pin):
         self.pin = pin
+        if platform.system() == 'Darwin':
+            # Connect to the pigpio daemon on the Raspberry Pi
+            self.pi = pigpio.pi(device_info.get_host_ip())
+            if not self.pi.connected:
+                raise RuntimeError("Failed to connect to pigpio daemon. (macOS)")
+        else:
+            # Initialize pigpio locally on Raspberry Pi
+            self.pi = pigpio.pi()
+            if not self.pi.connected:
+                raise RuntimeError("Failed to connect to pigpio daemon.")
+        # Set the pin as input
+        self.pi.set_mode(self.pin, pigpio.INPUT)
+
+        # Initialize variables for IR signal processing
         self.high_tick = 0
-        self.gap = 10000  # 微秒
-        self.code_timeout = 50000  # 微秒
+        self.gap = 10000  # Microseconds
+        self.code_timeout = 50000  # Microseconds
         self.code = []
         self.in_code = False
 
-        # 设置引脚为输入模式
-        self.pi.set_mode(self.pin, pigpio.INPUT)
+        # Register the callback function
+        self.cb = self.pi.callback(self.pin, pigpio.EITHER_EDGE, self.ir_callback)
 
-        # 注册回调函数
-        self.cb = self.pi.callback(self.pin, pigpio.EITHER_EDGE, self._cbf)
+    def listen(self):
+        print("Listening for IR signals... Press Ctrl+C to stop.")
 
-    def _cbf(self, gpio, level, tick):
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("IR signal listening stopped.")
+        finally:
+            self.cancel()
+            self.pi.stop()  # Clean up pigpio resources
+
+    def ir_callback(self, gpio, level, tick):
         if level != pigpio.TIMEOUT:
             edge = tick
             if self.high_tick != 0:
                 duration = pigpio.tickDiff(self.high_tick, edge)
                 if duration > self.gap:
                     if self.in_code:
-                        # 处理接收到的代码
+                        # Process the received code
                         self.process_code(self.code)
                         self.code = []
                     self.in_code = True
@@ -38,56 +63,77 @@ class IRReceiver:
                     self.code.append(duration)
             self.high_tick = edge
         else:
-            # 超时处理
+            # Timeout handling
             if self.in_code:
                 self.process_code(self.code)
                 self.code = []
                 self.in_code = False
 
     def process_code(self, code):
-        # 简单的 NEC 解码示例，实际使用中可能需要更复杂的处理
-        if len(code) < 67:
-            print("代码长度不足，无法解码")
+        # Thresholds in microseconds
+        LEADER_HIGH_MIN = 8500
+        LEADER_HIGH_MAX = 9500
+        LEADER_LOW_MIN = 4000
+        LEADER_LOW_MAX = 5000
+        BIT_MARK_MIN = 500
+        BIT_MARK_MAX = 700
+        ZERO_SPACE_MIN = 400
+        ZERO_SPACE_MAX = 700
+        ONE_SPACE_MIN = 1500
+        ONE_SPACE_MAX = 1900
+        # Remove the initial gap if present
+        if code[0] > 100000:
+            code = code[1:]
+        # Check for leader code
+        if len(code) < 2:
+            print("Code too short to process.")
             return
-
+        leader_high = code[0]
+        leader_low = code[1]
+        if not (LEADER_HIGH_MIN <= leader_high <= LEADER_HIGH_MAX and LEADER_LOW_MIN <= leader_low <= LEADER_LOW_MAX):
+            print("Leader code not detected.")
+            return
+        # Process bits
         bits = []
-        for i in range(1, len(code), 2):
-            if 1000 < code[i] < 2000:
-                bits.append(0)
-            elif 2000 < code[i] < 3000:
-                bits.append(1)
-            else:
-                print("脉冲宽度异常，无法解码")
+        i = 2  # Start after leader code
+        while i < len(code) - 1:
+            mark = code[i]
+            space = code[i + 1]
+            if not (BIT_MARK_MIN <= mark <= BIT_MARK_MAX):
+                print(f"Invalid mark duration at index {i}: {mark}")
                 return
-
-        # 将位列表转换为整数
-        value = 0
-        for bit in bits:
-            value = (value << 1) | bit
-
-        print(f"解码结果：{hex(value)}")
+            if ZERO_SPACE_MIN <= space <= ZERO_SPACE_MAX:
+                bits.append('0')
+            elif ONE_SPACE_MIN <= space <= ONE_SPACE_MAX:
+                bits.append('1')
+            else:
+                print(f"Invalid space duration at index {i+1}: {space}")
+                return
+            i += 2
+        # Check if we have 32 bits
+        if len(bits) != 32:
+            print(f"Expected 32 bits, got {len(bits)} bits.")
+            return
+        # Convert bits to bytes
+        address_bits = bits[0:8]
+        address_inv_bits = bits[8:16]
+        command_bits = bits[16:24]
+        command_inv_bits = bits[24:32]
+        address = int(''.join(address_bits), 2)
+        address_inv = int(''.join(address_inv_bits), 2)
+        command = int(''.join(command_bits), 2)
+        command_inv = int(''.join(command_inv_bits), 2)
+        # Verify the data
+        if address ^ address_inv != 0xFF or command ^ command_inv != 0xFF:
+            print("Data verification failed.")
+            return
+        print(f"Decoded Address: {hex(address)}")
+        print(f"Decoded Command: {hex(command)}")
 
     def cancel(self):
         self.cb.cancel()
 
-# 主程序
+# Main program
 if __name__ == "__main__":
-    # 连接到树莓派上的 pigpio 守护进程
-    pi = pigpio.pi(RASPBERRY_PI_IP)
-
-    if not pi.connected:
-        print("无法连接到树莓派的 pigpio 守护进程")
-        exit()
-
-    ir_receiver = IRReceiver(pi, IR_PIN)
-
-    print("开始监听红外信号... 按 Ctrl+C 结束")
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("停止监听")
-    finally:
-        ir_receiver.cancel()
-        pi.stop()
+    ir_receiver = IRReceiver(pin=17)  # Assume the IR receiver is connected to GPIO 17
+    ir_receiver.listen()
