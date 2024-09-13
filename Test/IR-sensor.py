@@ -4,6 +4,11 @@
 import platform
 from Library.DeviceInfo import device_info
 import time
+import sys
+import os
+
+# add the parent directory to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 if platform.system() == 'Darwin':
     from gpiozero import DigitalInputDevice  # remote GPIO for macOS

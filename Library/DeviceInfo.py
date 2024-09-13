@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import uuid
@@ -93,7 +94,16 @@ class DeviceInfo:
             return interfaces
         except Exception as e:
             print(f"Error retrieving network interfaces: {e}")
-            return None
+            print("Trying alternative method...")
+            try:
+                # this works on Linux
+                interfaces = os.listdir('/sys/class/net/')
+                print(f"Network interfaces: {interfaces}")
+                return interfaces
+            except Exception as e:
+                print(f"Error retrieving network interfaces: {e}")
+                return None
+            # return None
 
 
 device_info = DeviceInfo()
