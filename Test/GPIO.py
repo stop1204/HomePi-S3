@@ -12,8 +12,22 @@ import RPi.GPIO as GPIO
 import time
 GPIO.setmode(GPIO.BCM)
 led_pin = 17
+
+pwd_led_pin = 18
 GPIO.setup(led_pin, GPIO.OUT)
-GPIO.output(led_pin, GPIO.HIGH)
-time.sleep(5)
-GPIO.output(led_pin, GPIO.LOW)
-GPIO.cleanup()
+GPIO.setup(pwd_led_pin, GPIO.OUT)
+
+pwm = GPIO.PWM(pwd_led_pin, 100)
+pwm.start(0)
+while True:
+
+    GPIO.output(led_pin, GPIO.HIGH)
+    time.sleep(1)
+    GPIO.output(led_pin, GPIO.LOW)
+    GPIO.cleanup()
+    for i in range(100):
+        pwm.ChangeDutyCycle(i)
+        time.sleep(0.01)
+    for i in range(100,0,-1):
+        pwm.ChangeDutyCycle(i)
+        time.sleep(0.01)

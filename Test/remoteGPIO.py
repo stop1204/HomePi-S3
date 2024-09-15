@@ -5,15 +5,24 @@
 This Python script uses the gpiozero library to control
 an LED connected to a Raspberry Pi GPIO pin via a remote host
 """
-from gpiozero import LED
+from gpiozero import LED,PWMLED
 from gpiozero.pins.pigpio import PiGPIOFactory
 from time import sleep
 
 
-factory = PiGPIOFactory(host='192.168.11.254')
+factory = PiGPIOFactory(host='192.168.8.104')
 led = LED(17, pin_factory=factory)
+# test the PWMLED
+pwm_led = PWMLED(18, pin_factory=factory)
 while True:
     led.on()
-    sleep(1)
+    sleep(0.5)
     led.off()
-    sleep(1)
+    sleep(0.5)
+
+    for i in range(0, 100):
+        pwm_led.value = i / 100
+        sleep(0.01)
+    for i in range(100, 0, -1):
+        pwm_led.value = i / 100
+        sleep(0.01)
