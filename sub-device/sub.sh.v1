@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Target keyword to match the device name
+TARGET_NAME="terry-main"
+MAC_ADDRESS=""
+
+# Enable Bluetooth agent for automatic pairing (NoInputNoOutput)
+{
+    echo "power on"
+
+#sleep 1
+#       echo "scan on"
+sleep 1
+    echo "discoverable on"
+sleep 1
+    echo "pairable on"
+sleep 2
+    echo "agent off"
+sleep 2
+    echo "agent NoInputNoOutput"
+sleep 2
+	echo "default-agent"
+sleep 2
+} | bluetoothctl
+
+# Continuously check for the device until found
+while [ -z "$MAC_ADDRESS" ]; do
+    sleep 2  # Wait before checking again
+
+    # Get the MAC address of the target device
+    MAC_ADDRESS=$(bluetoothctl devices | grep -i "$TARGET_NAME" | awk '{print $2}')
+    if [ -n "$MAC_ADDRESS" ]; then
+        echo "Found device: $MAC_ADDRESS"
+    else
+        echo "Device containing keyword '$TARGET_NAME' not found. Continuing to scan..."
+    fi
+done
+while true; do
+# Device is found, now check if it's paired, trusted, and connected
+
+# 1. Check if the device is paired
+paired=$(bluetoothctl info "$MAC_ADDRESS" | grep "Paired: yes")
+if [ -z "$paired" ]; then
+    echo "Device $MAC_ADDRESS is not paired. Pairing now..."
+    echo "pair $MAC_ADDRESS" | bluetoothctl
+    sleep 2
+else
+    echo "Device $MAC_ADDRESS is already paired."
+fi
+
+# 2. Check if the device is trusted
+trusted=$(bluetoothctl info "$MAC_ADDRESS" | grep "Trusted: yes")
+if [ -z "$trusted" ]; then
+    echo "Device $MAC_ADDRESS is not trusted. Trusting now..."
+    echo "trust $MAC_ADDRESS" | bluetoothctl
+    sleep 2
+else
+    echo "Device $MAC_ADDRESS is already trusted."
+fi
+
+# 3. Check if the device is connected
+connected=$(bluetoothctl devices Connected  | grep "Connected: yes")
+echo "debug       $connected"
+if [ -z "$connected" ]; then
+    echo "Device $MAC_ADDRESS is not connected. Connecting now..."
+    echo "connect $MAC_ADDRESS" | bluetoothctl
+
+echo "wait 10s"
+    sleep 10
+echo "wait done"
+connected=$(bluetoothctl devices Connected | grep "$MAC_ADDRESS")
+
+echo "debug2       $connected"
+if [ -z "$connected" ]; then
+
+	continue
+fi
+else
+    echo "Device $MAC_ADDRESS is already connected."
+fi
+
+# Keep the script running
+while true; do
+    sleep 86400  # Sleep for 1 day
+done
+done
+echo "sub.sh exit"
