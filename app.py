@@ -12,8 +12,8 @@ app = Flask(__name__)
 log_path = os.path.join("/home","terry", "wifi_configurator", "wifi_configurator.log")
 # log record
 logging.basicConfig(
-    # filename=log_path,
-    filename='/tmp/wifi_configurator.log',
+    filename=log_path,
+    # filename='/tmp/wifi_configurator.log',
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s:%(message)s'
 )

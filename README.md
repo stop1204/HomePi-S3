@@ -9,4 +9,4 @@ RaspberryPi Project
     - logo.png
 - templates/
     - index.html
-    - wifi_config.html 
+    - wifi_config.html (only for RaspberryPi)
