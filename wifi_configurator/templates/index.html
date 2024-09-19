@@ -1,0 +1,319 @@
+<!-- terry@terry:~/wifi_configurator/templates $ pwd -->
+<!-- /home/terry/wifi_configurator/templates -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Raspberry Pi Wi-Fi Configurator</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+  <style>
+    .tab-content {
+      margin-top: 20px;
+    }
+    #error-message {
+      color: red;
+    }
+    #bluetooth-scan-results ul {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .connect-bluetooth-btn {
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 class="mt-5">Wi-Fi Configurator</h1>
+  <ul class="nav nav-tabs" id="configTabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link active" id="scan-tab" data-toggle="tab" href="#scan" role="tab" aria-controls="scan" aria-selected="true">Scan Wi-Fi</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="manual-tab" data-toggle="tab" href="#manual" role="tab" aria-controls="manual" aria-selected="false">Manual Entry</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#device_info" data-toggle="tab">Device Info</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#bluetooth_scan" data-toggle="tab">Bluetooth Scan</a>
+    </li>
+  </ul>
+  <div class="tab-content" id="configTabsContent">
+    <!-- Tab 1: Scan Wi-Fi -->
+    <div class="tab-pane fade show active" id="scan" role="tabpanel" aria-labelledby="scan-tab">
+      <h3>Available Wi-Fi Networks</h3>
+      <ul class="list-group" id="wifi-list">
+        <!-- auto fill -->
+      </ul>
+    </div>
+    <!-- Tab 2: Manual Entry -->
+    <div class="tab-pane fade" id="manual" role="tabpanel" aria-labelledby="manual-tab">
+      <h3>Manual Wi-Fi Entry</h3>
+      <form id="manual-form">
+        <div class="form-group">
+          <label for="manual-ssid">SSID</label>
+          <input type="text" class="form-control" id="manual-ssid" required>
+        </div>
+        <div class="form-group">
+          <label for="manual-password">Password</label>
+          <input type="password" class="form-control" id="manual-password">
+        </div>
+        <button type="submit" class="btn btn-primary">Connect</button>
+        <div id="error-message" class="mt-2"></div>
+      </form>
+    </div>
+    <!-- Tab 3: device infor -->
+    <div class="tab-pane fade" id="device_info" role="tabpanel" aria-labelledby="manual-tab">
+      <h3>Device Information</h3>
+      <div id="device-info-content">
+        <!-- Information will be populated via JavaScript -->
+      </div>
+    </div>
+    <!-- Tab 3: bluetooth_scan-->
+    <div class="tab-pane fade" id="bluetooth_scan" role="tabpanel" aria-labelledby="manual-tab">
+      <h3>Bluetooth Scan</h3>
+      <button id="scan-bluetooth-btn" class="btn btn-primary mb-3">Scan for Bluetooth Devices</button>
+      <div id="bluetooth-scan-results">
+        <!-- Scanned Bluetooth devices will be displayed here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- input password -->
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="password-form">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Enter Password</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <input type="hidden" id="selected-ssid">
+          <div class="form-group">
+            <label for="wifi-password">Password</label>
+            <input type="password" class="form-control" id="wifi-password" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Connect</button>
+        </div>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- js library -->
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
+
+<script>
+  $(document).ready(function(){
+    // scan wifi network
+    function loadWiFiNetworks(){
+      $.getJSON('/scan', function(data){
+        $('#wifi-list').empty();
+        data.forEach(function(ssid){
+          var listItem = `<li class="list-group-item d-flex justify-content-between align-items-center">
+                    ${ssid}
+                    <button class="btn btn-sm btn-primary connect-btn" data-ssid="${ssid}">Connect</button>
+                </li>`;
+          $('#wifi-list').append(listItem);
+        });
+      });
+    }
+
+    loadWiFiNetworks();
+
+    // click connect
+    $(document).on('click', '.connect-btn', function(){
+      var ssid = $(this).data('ssid');
+      $('#selected-ssid').val(ssid);
+      $('#passwordModal').modal('show');
+    });
+
+    // submit password
+    $('#password-form').submit(function(e){
+      e.preventDefault();
+      var ssid = $('#selected-ssid').val();
+      var password = $('#wifi-password').val();
+      $.ajax({
+        url: '/connect',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ssid: ssid, password: password}),
+        success: function(response){
+          alert('Connected Successfully!');
+          location.reload();
+        },
+        error: function(){
+          alert('Connection Failed!');
+        }
+      });
+    });
+
+    // connect manually
+    $('#manual-form').submit(function(e){
+      e.preventDefault();
+      var ssid = $('#manual-ssid').val();
+      var password = $('#manual-password').val();
+      $.ajax({
+        url: '/manual_connect',
+        type: 'POST',
+        data: {ssid: ssid, password: password},
+        success: function(response){
+          alert(response);
+          location.reload();
+        },
+        error: function(response){
+          $('#error-message').text(response.responseText);
+        }
+      });
+    });
+  });
+  /*
+  document.addEventListener('DOMContentLoaded', function() {
+      // When the Device Info tab is clicked
+      document.querySelector('a[href="#device_info"]').addEventListener('click', function(e) {
+          e.preventDefault();
+          fetch('/device_info')
+              .then(response => response.json())
+              .then(data => {
+                  const container = document.getElementById('device-info-content');
+                  container.innerHTML = `
+                      <h4>Wi-Fi Information</h4>
+                      <p>Connected SSID: ${data.wifi.connected_ssid || 'Not connected'}</p>
+                      <pre>${JSON.stringify(data.wifi, null, 2)}</pre>
+                      <h4>Bluetooth Information</h4>
+                      <pre>${JSON.stringify(data.bluetooth, null, 2)}</pre>
+                  `;
+              })
+              .catch(error => {
+                  console.error('Error fetching device info:', error);
+                  document.getElementById('device-info-content').innerText = 'Unable to retrieve device information.';
+              });
+      });
+  });*/
+  document.addEventListener('DOMContentLoaded', function() {
+    // When the Device Info tab is clicked
+    document.querySelector('a[href="#device_info"]').addEventListener('click', function(e) {
+      e.preventDefault();
+      fetch('/device_info')
+              .then(response => response.json())
+              .then(data => {
+                const container = document.getElementById('device-info-content');
+
+                // Function to convert newline characters to <br>
+                const nl2br = (str) => {
+                  return str
+                          // Replace newline + tab with <br> and indentation
+                          .replace(/\n\t/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;')
+                          // Replace standalone tab with indentation
+                          .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
+                          // Replace remaining newline with <br>
+                          .replace(/\n/g, '<br>');
+                };
+
+                // Convert JSON objects to formatted strings
+                const wifiInfo = `<pre>${JSON.stringify(data.wifi, null, 2)}</pre>`;
+                const bluetoothInfo = `<pre>${JSON.stringify(data.bluetooth, null, 2)}</pre>`;
+
+                container.innerHTML = `
+                    <h4>Wi-Fi Information</h4>
+                    <p>Connected SSID: ${data.wifi.connected_ssid || 'Not connected'}</p>
+                    <pre>${JSON.stringify(data.wifi, null, 2)}</pre>
+                    <h4>Bluetooth Information</h4>
+                    <p>Status:</p>
+                    <p>${nl2br(data.bluetooth.status)}</p>
+                    <h5>Paired Devices:</h5>
+                    <ul>
+                        ${data.bluetooth.paired_devices.map(device => `
+                            <li>${device.name} (${device.address})</li>
+                        `).join('')}
+                    </ul>
+                `;
+              })
+              .catch(error => {
+                console.error('Error fetching device info:', error);
+                document.getElementById('device-info-content').innerText = 'Unable to retrieve device information.';
+              });
+    });
+
+
+    // Handle Bluetooth Scan Button Click
+    document.getElementById('scan-bluetooth-btn').addEventListener('click', function() {
+      const resultsContainer = document.getElementById('bluetooth-scan-results');
+      resultsContainer.innerHTML = '<p>Scanning for Bluetooth devices...</p>';
+
+      fetch('/bluetooth_scan')
+              .then(response => response.json())
+              .then(data => {
+                if (data.length === 0) {
+                  resultsContainer.innerHTML = '<p>No Bluetooth devices found.</p>';
+                  return;
+                }
+
+                let devicesHtml = '<ul class="list-group">';
+                data.forEach(device => {
+                  devicesHtml += `
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            ${device.name} (${device.address})
+                            <button class="btn btn-success btn-sm connect-bluetooth-btn" data-address="${device.address}">Connect</button>
+                        </li>
+                    `;
+                });
+                devicesHtml += '</ul>';
+
+                resultsContainer.innerHTML = devicesHtml;
+
+                // Add event listeners to Connect buttons
+                document.querySelectorAll('.connect-bluetooth-btn').forEach(button => {
+                  button.addEventListener('click', function() {
+                    const address = this.getAttribute('data-address');
+                    connectBluetoothDevice(address);
+                  });
+                });
+              })
+              .catch(error => {
+                console.error('Error scanning Bluetooth devices:', error);
+                resultsContainer.innerHTML = '<p>Error scanning Bluetooth devices.</p>';
+              });
+    });
+
+    // Function to Connect to a Bluetooth Device
+    function connectBluetoothDevice(address) {
+      const resultsContainer = document.getElementById('bluetooth-scan-results');
+      resultsContainer.innerHTML = `<p>Connecting to ${address}...</p>`;
+
+      fetch('/bluetooth_connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ address: address })
+      })
+              .then(response => response.json())
+              .then(data => {
+                if (data.status === 'success') {
+                  resultsContainer.innerHTML = `<p class="text-success">Successfully connected to ${address}.</p>`;
+                } else {
+                  resultsContainer.innerHTML = `<p class="text-danger">Failed to connect to ${address}: ${data.message}</p>`;
+                }
+              })
+              .catch(error => {
+                console.error('Error connecting to Bluetooth device:', error);
+                resultsContainer.innerHTML = `<p class="text-danger">Error connecting to ${address}.</p>`;
+              });
+    }
+  });
+</script>
+</body>
+</html>

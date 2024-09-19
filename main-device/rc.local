@@ -1,0 +1,74 @@
+#!/bin/bash -e
+##!/bin/sh -e
+#
+# rc.local
+#
+# This script is executed at the end of each multiuser runlevel.
+# Make sure that the script will "exit 0" on success or any other
+# value on error.
+#
+# In order to enable or disable this script just change the execution
+# bits.
+#
+# By default this script does nothing.
+
+# Print the IP address
+_IP=$(hostname -I) || true
+if [ "$_IP" ]; then
+  printf "My IP address is %s\n" "$_IP"
+fi
+echo "start nohup"
+> /home/terry/Desktop/HomePi-S3/nohup.out
+echo "write nohup"
+sleep 1
+echo "natapp started" >> /home/terry/Desktop/HomePi-S3/nohup.out
+echo "start natapp"
+export NATAPPTOKEN=423e95bb48e4037c
+sleep 1
+nohup /home/terry/Desktop/HomePi-S3/natapp -authtoken="$NATAPPTOKEN" -log=stdout -loglevel=INFO > /home/terry/Desktop/HomePi-S3/nohup.out &
+echo "start BT"
+# BT Main
+/home/terry/Desktop/bluetooth/main.sh &
+# echo -e "power on\ndiscoverable on\npairable on\nagent on\ndefault-agent\n" | nohup bluetoothctl > /var/log/bluetoothctl.log 2>&1 &
+
+sleep 1
+/home/terry/Desktop/HomePi-S3/natapp_monitor.sh &
+python3 /home/terry/wifi_configurator/app.py &
+python3 /home/terry/Desktop/HomePi-S3/app.py &
+
+# Create the directory if it doesn't exist
+mkdir -p /tmp
+
+# Get today's date in YYYY-MM-DD format
+TODAY=$(date +%F)
+
+# Define the log file path
+LOG_FILE=/tmp/"$TODAY.log"
+touch "$LOG_FILE"
+chmod 777 "$LOG_FILE"
+echo $(date +"%Y-%m-%d_%H-%M-%S_random-$(( RANDOM ))") >> "$LOG_FILE"
+echo $(date +"%Y-%m-%d_%H-%M-%S")
+# connection name
+CONNECTION_NAME="terry-wifi"
+# Wait for NetworkManager to start
+while ! systemctl is-active --quiet NetworkManager; do
+    echo "NetworkManager is not yet started, waiting 1 second..." >> "$LOG_FILE"
+    sleep 1
+done
+
+echo "NetworkManager is now active $(( RANDOM ))" >> "$LOG_FILE"
+# check the config
+if nmcli connection show "$CONNECTION_NAME" >/dev/null 2>&1; then
+    echo "Connection '$CONNECTION_NAME' exist，do modify..." >> "$LOG_FILE"
+    # modify
+    /usr/bin/nmcli connection modify "$CONNECTION_NAME" wifi.ssid "terry-wifi-main-$(( RANDOM ))$(( RANDOM ))"
+else
+    echo "Connection '$CONNECTION_NAME' does not exist，do create..." >> "$LOG_FILE"
+    # create new one
+    /usr/bin/nmcli c add type wifi con-name "$CONNECTION_NAME" autoconnect yes wifi.mode ap wifi.ssid "terry-wifi-main-$(( RANDOM ))$(( RANDOM ))" ipv4.method shared ipv6.method shared
+fi
+
+
+
+
+exit 0
