@@ -42,7 +42,7 @@ def receive_data(device):
         yield ''
 
 def handshake(device_send, device_receive):
-    verification_code_b =  str(random.randint(1000000, 9999999))
+    verification_code_b =  str(random.randint(100000, 999999))
     handshake_successful = False
 
     def sender():
