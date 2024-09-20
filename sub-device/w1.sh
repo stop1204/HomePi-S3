@@ -34,7 +34,7 @@ while true; do
             echo "Connected successfully to /dev/rfcomm1."
             # Keep the script running to maintain the connection
             wait
-            exit 0
+
         fi
     done
     echo "Connection failed, retrying in 5 seconds..."
