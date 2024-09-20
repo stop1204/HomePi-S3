@@ -2,7 +2,8 @@ import threading
 import time
 import os
 
-from sympy.core.random import random
+import  random
+
 
 
 def wait_for_device(device, timeout=30):
@@ -43,7 +44,7 @@ def receive_data(device):
 
 
 def handshake(device_send, device_receive):
-    verification_code_a =  random.randint(100000, 999999)
+    verification_code_a =  str( random.randint(100000, 999999))
     handshake_successful = False
 
 
@@ -62,7 +63,8 @@ def handshake(device_send, device_receive):
             data_filtered = ''.join(filter(lambda x: x.isprintable(), data)).strip()
             print(f"Device A received: {data_filtered}")
 
-            if data_filtered.startswith(str(verification_code_a)):
+            # A code length = 5  B code length = 6
+            if len(data_filtered)==11 and  data_filtered.startswith(str(verification_code_a)):
                 verification_code_b = data_filtered.lstrip(str(verification_code_a))
                 send_verification_code(device_send, verification_code_b)
             elif data_filtered == "ready":

@@ -2,7 +2,7 @@
 import threading
 import time
 import os
-from sympy.core.random import random
+import random
 
 
 def wait_for_device(device, timeout=30):
@@ -42,7 +42,7 @@ def receive_data(device):
         yield ''
 
 def handshake(device_send, device_receive):
-    verification_code_b =  random.randint(1000000, 9999999)
+    verification_code_b =  str(random.randint(1000000, 9999999))
     handshake_successful = False
 
     def sender():
@@ -62,14 +62,14 @@ def handshake(device_send, device_receive):
 
             if data_filtered == "ready":
                 handshake_successful = True
-            elif data_filtered == verification_code_b:
+            elif len(data_filtered)==6 and data_filtered == verification_code_b:
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
-            else:
-                combined_code =  data_filtered + str(verification_code_b)
+            elif len(data_filtered) ==5:
+                combined_code =  str(data_filtered) + str(verification_code_b)
                 send_verification_code(device_send, combined_code)
                 print("Handshake completed. Device B is ready.")
         except StopIteration:
