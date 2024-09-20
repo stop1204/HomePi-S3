@@ -1,62 +1,102 @@
-import os
+
+import threading
 import time
-import subprocess
+import os
+from sympy.core.random import random
 
-def get_connected_device():
-    while True:
-        result = subprocess.run(['bluetoothctl', 'devices', 'Connected'], capture_output=True, text=True)
-        if result.stdout:
-            lines = result.stdout.splitlines()
-            if lines:
-                return lines[0].split()[1]
-        print("No connected devices found. Retrying in 3 seconds...")
-        time.sleep(3)
 
-def send_data(device, data):
-    with open(device, 'w') as rfcomm:
-        rfcomm.write(data)
-    print(f"Sent from B: {data}")
+def wait_for_device(device, timeout=30):
+    start_time = time.time()
+    while not os.path.exists(device):
+        if time.time() - start_time > timeout:
+            print(f"Timeout waiting for {device} to be created.")
+            return False
+        time.sleep(1)
+    return True
+
+def send_verification_code(device, message):
+    try:
+        with open(device, 'w', encoding='utf-8') as rfcomm:
+            rfcomm.write(message + '\0')
+            rfcomm.flush()
+        print(f"Device B sent: {message}")
+    except Exception as e:
+        print(f"Error writing to {device}: {e}")
 
 def receive_data(device):
-    result = subprocess.run(['dd', f'if={device}', 'bs=1', 'count=1'], capture_output=True)
-    received_data = result.stdout
-    print(f"Received by B: {received_data}")
-    return received_data
+    buffer = ''
+    try:
+        with open(device, 'r', encoding='utf-8', errors='ignore') as rfcomm:
+            while True:
+                char = rfcomm.read(1)
+                if not char:
+                    time.sleep(0.1)
+                    continue
+                buffer += char
+                if '\0' in buffer:
+                    data = buffer.strip()
+                    buffer = ''
+                    yield data
+    except Exception as e:
+        print(f"Error reading from {device}: {e}")
+        yield ''
 
-def wait_for_feedback(device):
-    while True:
-        feedback = receive_data(device)
-        if feedback:
-            return feedback
+def handshake(device_send, device_receive):
+    verification_code_b =  random.randint(1000000, 9999999)
+    handshake_successful = False
 
-def clear_buffer(device):
-    consecutive_ones = 0
-    while consecutive_ones < 10:
-        data = receive_data(device)
-        if len(data) == 1:
-            consecutive_ones += 1
-        else:
-            consecutive_ones = 0
-        time.sleep(0.1)
+    def sender():
+        while not handshake_successful:
+            send_verification_code(device_send, verification_code_b)
+            time.sleep(1)
+
+    sender_thread = threading.Thread(target=sender, daemon=True)
+    sender_thread.start()
+
+    data_generator = receive_data(device_receive)
+    while not handshake_successful:
+        try:
+            data = next(data_generator)
+            data_filtered = ''.join(filter(lambda x: x.isprintable(), data)).strip()
+            print(f"Device B received: {data_filtered}")
+
+            if data_filtered == "ready":
+                handshake_successful = True
+            elif data_filtered == verification_code_b:
+                send_verification_code(device_send, "ready")
+                send_verification_code(device_send, "ready")
+                send_verification_code(device_send, "ready")
+                send_verification_code(device_send, "ready")
+                send_verification_code(device_send, "ready")
+            else:
+                combined_code =  data_filtered + str(verification_code_b)
+                send_verification_code(device_send, combined_code)
+                print("Handshake completed. Device B is ready.")
+        except StopIteration:
+            break
+
+
+    print("Device B received 'ready'. Handshake is fully completed.")
+
+
+
 
 def main():
-    rfcomm0 = '/dev/rfcomm0'  # Listen for data
-    rfcomm1 = '/dev/rfcomm1'  # Send feedback
+    device_send = '/dev/rfcomm1'  # Device B sends data on rfcomm1
+    device_receive = '/dev/rfcomm0'  # Device B receives data on rfcomm0
 
-    bt_address = get_connected_device()  # Loop until a connected device is found
-    print(f"Connected to device: {bt_address}")
+    # Wait for devices to be available
+    if not wait_for_device(device_send) or not wait_for_device(device_receive):
+        print("Devices not available. Exiting.")
+        return
 
-    # Establish connection to device A
-    os.system(f'sudo rfcomm watch {rfcomm0} 1')
-    os.system(f'sudo rfcomm watch {rfcomm1} 3')
+    # Perform handshake
+    handshake(device_send, device_receive)
 
-    # Initial handshake to confirm connection
-    feedback = wait_for_feedback(rfcomm0)  # Wait for data from device A
-    if feedback:
-        send_data(rfcomm1, "B")  # Send a single byte 'B' to confirm connection
+    # Proceed to normal processing
+    print("Device B entering normal operation.")
 
-        print("Handshake successful! Starting buffer clearing...")
-        clear_buffer(rfcomm0)  # Clear buffer
+    # ... Rest of your code for normal processing ...
 
 if __name__ == "__main__":
     main()
