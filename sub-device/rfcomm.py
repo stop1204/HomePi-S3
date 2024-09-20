@@ -62,16 +62,18 @@ def handshake(device_send, device_receive):
 
             if data_filtered == "ready":
                 handshake_successful = True
+
             elif len(data_filtered)==6 and data_filtered == verification_code_b:
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
                 send_verification_code(device_send, "ready")
+                print("Handshake completed. Device B is ready.")
             elif len(data_filtered) ==5:
                 combined_code =  str(data_filtered) + str(verification_code_b)
                 send_verification_code(device_send, combined_code)
-                print("Handshake completed. Device B is ready.")
+
         except StopIteration:
             break
 

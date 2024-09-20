@@ -31,7 +31,7 @@ def receive_data(device):
             while True:
                 char = rfcomm.read(1)
                 if not char:
-                    # time.sleep(0.1)
+                    time.sleep(0.1)
                     continue
                 buffer += char
                 if '\0' in buffer:
@@ -51,7 +51,7 @@ def handshake(device_send, device_receive):
     def sender():
         while not handshake_successful:
             send_verification_code(device_send, verification_code_a)
-            time.sleep(0.5)
+            time.sleep(1)
 
     sender_thread = threading.Thread(target=sender, daemon=True)
     sender_thread.start()
@@ -65,8 +65,11 @@ def handshake(device_send, device_receive):
 
             # A code length = 5  B code length = 6
             if len(data_filtered)==11 and  data_filtered.startswith(str(verification_code_a)):
-                verification_code_b = data_filtered.lstrip(str(verification_code_a))
+                # verification_code_b = data_filtered.lstrip(str(verification_code_a))
+                verification_code_b = data_filtered[5:]
+
                 send_verification_code(device_send, verification_code_b)
+                print(f"Device A sent verification code: {verification_code_b}")
             elif data_filtered == "ready":
                 send_verification_code(device_send, data_filtered)
                 send_verification_code(device_send, data_filtered)
