@@ -4,7 +4,19 @@ import os
 
 import  random
 
+from luma.core.interface.serial import spi
+from luma.lcd.device import st7735
+from PIL import Image, ImageDraw, ImageFont
 
+serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
+lcd_device = st7735(serial, width=160, height=128, rotate=1)
+def display_on_lcd(message):
+    image = Image.new("RGB", (lcd_device.width, lcd_device.height))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    draw.rectangle((0, 0, lcd_device.width, lcd_device.height), outline=0, fill=(0, 0, 0))
+    draw.text((10, 10), message, font=font, fill=(255, 255, 255))
+    lcd_device.display(image)
 
 def wait_for_device(device, timeout=30):
     start_time = time.time()
@@ -78,12 +90,41 @@ def handshake(device_send, device_receive):
                 send_verification_code(device_send, data_filtered)
                 handshake_successful = True
                 print("Handshake successful.")
+
+                display_on_lcd("Handshake successful")
+                print("Handshake successful.")
         except StopIteration:
             break
 
 
 
     print("Handshake completed. Device A is ready.")
+
+
+
+def check_command_queue():
+    command_file = '/home/terry/Desktop/HomePi-S3/command_queue.txt'
+    while True:
+        if os.path.exists(command_file):
+            with open(command_file, 'r') as f:
+                commands = f.readlines()
+            os.remove(command_file)
+            for command in commands:
+                command = command.strip()
+                # execute command
+                result = execute_command(command)
+                # write result to log file
+                with open('rfcomm_log.txt', 'a') as log_file:
+                    log_file.write(f"> {command}\n{result}\n")
+        time.sleep(1)
+
+def execute_command(command):
+
+    if command == 'status':
+        return 'RFComm is running.'
+    else:
+        return f'Unknown command: {command}'
+
 
 def main():
     device_send = '/dev/rfcomm0'  # Device A sends data on rfcomm0
@@ -103,4 +144,5 @@ def main():
     # ... Rest of your code for normal processing ...
 
 if __name__ == "__main__":
+    threading.Thread(target=check_command_queue, daemon=True).start()
     main()

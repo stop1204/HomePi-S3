@@ -13,7 +13,7 @@ log_path = os.path.join("/home","terry", "wifi_configurator", "wifi_configurator
 # log record
 logging.basicConfig(
     filename=log_path,
-    # filename='/tmp/wifi_configurator.log',
+    # filename='/tmp/wifi_configurator.log',ff
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s:%(message)s'
 )
@@ -363,5 +363,43 @@ def bluetooth_connect_route():
     else:
         return jsonify({"status": "fail", "message": f"Failed to connect to {address}."}), 400
 
+
+@app.route('/console')
+def console():
+    return render_template('console.html')
+
+@app.route('/send_command', methods=['POST'])
+def send_command():
+    command = request.form.get('command')
+    # write command to file, the command will be executed by another process in the background (rfcomm)
+    with open('command_queue.txt', 'a') as f:
+        f.write(command + '\n')
+    return 'OK'
+
+@app.route('/get_log')
+def get_log():
+    try:
+        with open('rfcomm_log.txt', 'r') as f:
+            log_content = f.read()
+        # just return the last 50 lines
+        lines = log_content.split('\n')
+        last_lines = '\n'.join(lines[-50:])
+        return last_lines
+    except FileNotFoundError:
+        return ''
+
+@app.route('/lcd_control', methods=['POST'])
+def lcd_control():
+    action = request.form.get('action')
+    message = request.form.get('message', '')
+    # write command to file, the command will be executed by another process in the background (rfcomm)
+    with open('lcd_command.txt', 'w') as f:
+        f.write(json.dumps({'action': action, 'message': message}))
+    return 'OK'
+
+
+
+
 if __name__ == '__main__':
+
     app.run(host='0.0.0.0', port=8000)

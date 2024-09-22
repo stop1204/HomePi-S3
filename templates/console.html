@@ -1,0 +1,55 @@
+<!-- templates/console.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Console</title>
+    <style>
+
+    </style>
+</head>
+<body>
+<h1>Console</h1>
+<button id="lcd_display">Display on LCD</button>
+<button id="lcd_clear">Clear LCD</button>
+<hr>
+<div id="log" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc;"></div>
+<input type="text" id="command" placeholder="Enter command">
+<hr>
+<button id="send">Send</button>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    $(document).ready(function(){
+        $('#send').click(function(){
+            var command = $('#command').val();
+            $.post('/send_command', {command: command}, function(data){
+                $('#command').val('');
+            });
+        });
+
+        function updateLog(){
+            $.get('/get_log', function(data){
+                $('#log').html(data);
+                $('#log').scrollTop($('#log')[0].scrollHeight);
+            });
+        }
+
+        setInterval(updateLog, 3000); // update log every 3 seconds
+    });
+
+    $('#lcd_display').click(function(){
+        var message = prompt("Enter message to display on LCD:");
+        $.post('/lcd_control', {action: 'display', message: message}, function(data){
+            alert('Message sent to LCD');
+        });
+    });
+
+    $('#lcd_clear').click(function(){
+        $.post('/lcd_control', {action: 'clear'}, function(data){
+            alert('LCD cleared');
+        });
+    });
+</script>
+</body>
+</html>
