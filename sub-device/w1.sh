@@ -1,5 +1,6 @@
 #!/bin/bash
 # /home/terry/Desktop/transmit/w1.sh
+# chmod +x /home/terry/Desktop/transmit/w1.sh
 # Function to get connected device MAC address
 get_connected_device() {
     while true; do

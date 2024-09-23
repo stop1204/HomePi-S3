@@ -35,7 +35,6 @@ sleep 1
 /home/terry/Desktop/HomePi-S3/natapp_monitor.sh &
 python3 /home/terry/wifi_configurator/app.py &
 python3 /home/terry/Desktop/HomePi-S3/app.py &
-
 # Create the directory if it doesn't exist
 mkdir -p /tmp
 
@@ -68,7 +67,9 @@ else
     /usr/bin/nmcli c add type wifi con-name "$CONNECTION_NAME" autoconnect yes wifi.mode ap wifi.ssid "terry-wifi-main-$(( RANDOM ))$(( RANDOM ))" ipv4.method shared ipv6.method shared
 fi
 
-
-
+/home/terry/Desktop/HomePi-S3/main-device/w0.sh &
+/home/terry/Desktop/HomePi-S3/main-device/w1.sh &
+sleep 10
+python3 /home/terry/Desktop/HomePi-S3/main-device/print.py &
 
 exit 0
