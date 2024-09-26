@@ -1,7 +1,7 @@
 #!/bin/bash
+# script path /home/terry/Desktop/HomePi-S3
 export WHATSAPPTOKEN=EAAYkp8miIFoBO61FZCaXWAN17KHcUZB2egrcle3QRfrPhQjwZCYfMxb7DeNfyyZA78kZAif5TclljULVSqHhAo0EZBbKi3fcGifTfn0UEnzlZAcHjgs6NjEwGfRoufE139FiKbEXLdJQt8MAB3REvfGpHyrwTF6YN4WcAnF05nIG6w6qAEcrmeY5mV2XHIRGLJO
 # Path to the nohup output file
-# chmod +x /home/terry/Desktop/HomePi-S3/natapp_monitor.sh
 nohup_file="/home/terry/Desktop/HomePi-S3/nohup.out"
 
 echo "natapp_monitor start"  >> "$nohup_file"
@@ -13,6 +13,7 @@ while true; do
         # Send the URL to your API using curl
 #        curl -X POST -H "Content-Type: application/json" -d "{\"tunnel_url\": \"$tunnel_url\"}" http://your-api-endpoint.com/receive-url
 # Send the WhatsApp message using curl
+echo '{"action": "show qr code"}' > main*/lcd_command.txt
 curl -i -X POST \
   https://graph.facebook.com/v20.0/411026728762888/messages \
   -H "Authorization: Bearer $WHATSAPPTOKEN" \

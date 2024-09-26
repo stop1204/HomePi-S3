@@ -9,15 +9,7 @@ from luma.lcd.device import st7735
 # pip install pillow --break-system-packages
 from PIL import Image, ImageDraw, ImageFont
 
-serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
-lcd_device = st7735(serial, width=160, height=128, rotate=1)
-def display_on_lcd(message):
-    image = Image.new("RGB", (lcd_device.width, lcd_device.height))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    draw.rectangle((0, 0, lcd_device.width, lcd_device.height), outline=0, fill=(0, 0, 0))
-    draw.text((10, 10), message, font=font, fill=(255, 255, 255))
-    lcd_device.display(image)
+
 
 def wait_for_device(device, timeout=30):
     start_time = time.time()
@@ -92,8 +84,7 @@ def handshake(device_send, device_receive):
                 handshake_successful = True
                 print("Handshake successful.")
 
-                display_on_lcd("Handshake successful")
-                print("Handshake successful.")
+
         except StopIteration:
             break
 
