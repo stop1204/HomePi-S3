@@ -14,21 +14,9 @@ import cairosvg
 import re
 from enum import Enum
 from queue import Queue
+import logging
+import datetime
 
-# Define Color Palette
-class ColorPalette(Enum):
-    RED = (255, 0, 0)
-    GREEN = (0, 255, 0)
-    BLUE = (0, 0, 255)
-    YELLOW = (255, 255, 0)
-    CYAN = (0, 255, 255)
-    MAGENTA = (255, 0, 255)
-    GRAY = (128, 128, 128)
-    ORANGE = (255, 165, 0)
-    INDIGO = (75, 0, 130)
-    PINK = (255, 192, 203)
-    WHITE = (255, 255, 255)
-    BLACK = (0, 0, 0)
 
 # GPIO Configuration using gpiozero
 BACKLIGHT_PIN = 18      # Backlight controlled via GPIO 18
@@ -51,9 +39,43 @@ button_down = Button(BUTTON_DOWN_PIN)    # Blue-Bottom
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
 device = st7735(serial, width=160, height=128, rotate=1)
 time.sleep(0.2)
+# Global variable to manage current display image
+current_display_image = None  # New global variable
 
 # Initialize Character Dimensions
 char_width, char_height = 0, 0
+
+# setup logging
+LOG_FILE = "operation.log"
+
+
+# Clear the log file on startup
+with open(LOG_FILE, 'w') as log_file:
+    log_file.write("Operation Log Initialized at {}\n".format(datetime.datetime.now().strftime("%H:%M")))
+
+# Configure logging to append with timestamps
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    datefmt='%H:%M'
+)
+
+
+# Define Color Palette
+class ColorPalette(Enum):
+    RED = (255, 0, 0)
+    GREEN = (0, 255, 0)
+    BLUE = (0, 0, 255)
+    YELLOW = (255, 255, 0)
+    CYAN = (0, 255, 255)
+    MAGENTA = (255, 0, 255)
+    GRAY = (128, 128, 128)
+    ORANGE = (255, 165, 0)
+    INDIGO = (75, 0, 130)
+    PINK = (255, 192, 203)
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
 
 # Define MenuItem and Menu Classes
 class MenuItem:
@@ -112,25 +134,55 @@ current_mode = "menu"  # can be "menu" or "action"
 
 # Define Menu Actions
 def display_device_status():
-    # Example device status information
     status = "Device Status:\n- Backlight: On\n- Buttons: Active\n- LCD: Working"
     update_display(msg=status)
+    logging.info("Displayed device status.")
+    set_mode_action()
+    render_menu()  # Display "<- Back"
 
 def clear_screen():
     clear_display()
+    logging.info("Cleared the display.")
+    set_mode_action()
+    render_menu()  # Display "<- Back"
 
 def show_qr_code():
     qr_code_btn()
+    logging.info("Displayed QR code.")
+    set_mode_action()
+    render_menu()  # Display "<- Back"
 
+# def display_custom_message():
+#     update_display("Custom Message!")
+#     logging.info("Displayed custom message.")
+# Define Menu Actions
 def display_custom_message():
-    update_display("Custom Message!")
+    message = "Hello, World!"
+    update_display(msg=message)
+    logging.info(f"Displayed message: '{message}'")
+    set_mode_action()
+    render_menu()  # Display "<- Back"
+
+def display_console_logs():
+    if not os.path.exists(LOG_FILE):
+        update_display("No logs available.")
+        logging.warning("Attempted to display logs, but log file does not exist.")
+    else:
+        with open(LOG_FILE, 'r') as log_file:
+            logs = log_file.read()
+        update_display(msg=logs)
+        logging.info("Displayed console logs.")
+    set_mode_action()
+    render_menu()  # Display "<- Back"
+
 
 # Create Menu Structure
 root_menu = MenuItem("Main Menu", children=[
-    MenuItem("Display Message", action=lambda: update_display("Hello, World!")),
+    MenuItem("Display Message", action=lambda: display_custom_message()),
     MenuItem("Show QR Code", action=show_qr_code),
     MenuItem("Device Status", action=display_device_status),
-    MenuItem("Clear Screen", action=clear_screen)
+    MenuItem("Clear Screen", action=clear_screen),
+    MenuItem("Console", action=display_console_logs)  # New Console menu item
 ])
 
 menu = Menu(root_menu)
@@ -161,7 +213,9 @@ def clear_display():
 
 # Function to Update Display with a Message
 def update_display(msg="", xy=(10,10), fill=ColorPalette.WHITE.value):
+    global current_display_image
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
+
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     draw.multiline_text(xy=xy, text=msg, font=font, fill=fill)
@@ -231,35 +285,48 @@ def display_qr_code_on_lcd(svg_data):
 
 # Function to Render the Menu on LCD
 def render_menu():
+    global current_mode,current_display_image
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
+    print(f"mode: {current_mode}")
+    if current_mode == "menu":
+        menu_items = menu.get_display_items()
+        for idx, item in enumerate(menu_items):
+            if idx == menu.selected_index:
+                fill = ColorPalette.YELLOW.value  # Highlighted item color
+            else:
+                fill = ColorPalette.WHITE.value
+            y_position = idx * char_height
+            # Ensure text is within display bounds
+            if y_position + char_height < device.height - char_height:
+                draw.text((10, y_position), item, font=font, fill=fill)
 
-    menu_items = menu.get_display_items()
-    for idx, item in enumerate(menu_items):
-        if idx == menu.selected_index:
-            fill = ColorPalette.YELLOW.value  # Highlighted item color
+        # Display operation instructions on the last line
+        if menu.history:
+            instruction = "<- Back"
         else:
-            fill = ColorPalette.WHITE.value
-        y_position = idx * char_height
-        # Ensure text is within display bounds
-        if y_position + char_height < device.height:
-            draw.text((10, y_position), item, font=font, fill=fill)
-
-    # Display operation instructions on the last line
-    if menu.history:
-        instruction = "<- Back"
-    else:
-        instruction = "Select ->"
-    draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
+            instruction = "Select ->"
+        draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
+    elif current_mode == "action":
+        # In action mode, just display the action content and "<- Back"
+        # Assuming the action has already updated the display
+        draw = ImageDraw.Draw(current_display_image)
+        draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
     device.display(image)
     print("Menu rendered")
 
-# Function to Handle Menu Actions (Not used anymore, kept for reference)
+# Function to Handle Menu Actions
 def handle_menu_action(action):
     if callable(action):
         action()
+        set_mode_action()
+        render_menu()  # Ensure the back instruction is displayed
+def button_back_pressed():
+    print("Red-Left pressed")
+    menu.back()
+    render_menu()  # Ensure the menu or action screen is rendered correctly
 
 # Button Press Handlers
 def button_up_pressed():
@@ -289,43 +356,66 @@ button_left.when_pressed = button_back_pressed
 
 # Function to Check and Queue External Commands
 def check_lcd_command():
-    command_file = '../lcd_command.txt'
+    command_files = ['/lcd_command.txt', '../lcd_command.txt']
     while True:
-        if os.path.exists(command_file):
-            print("Loaded command")
-            with open(command_file, 'r') as f:
-                try:
-                    command_data = json.load(f)
-                except json.JSONDecodeError:
-                    print("Invalid JSON in command file.")
-                    command_data = {}
-            os.remove(command_file)
-            action = command_data.get('action')
-            message = command_data.get('message', '')
-            if action == 'display':
-                command_queue.put(('display', message))
-            elif action == 'clear':
-                command_queue.put(('clear', ''))
-            elif action == 'show qr code':
-                command_queue.put(('qr_code', ''))
+        for command_file in command_files:
+            if os.path.exists(command_file):
+                print(f"Loaded command from {command_file}")
+                with open(command_file, 'r') as f:
+                    try:
+                        command_data = json.load(f)
+                    except json.JSONDecodeError:
+                        print("Invalid JSON in command file.")
+                        command_data = {}
+                os.remove(command_file)
+                action = command_data.get('action')
+                message = command_data.get('message', '')
+                if action == 'display':
+                    logging.info(f"External command: display '{message}'")
+                    command_queue.put(('display', message))
+                elif action == 'clear':
+                    logging.info("External command: clear")
+                    command_queue.put(('clear', ''))
+                elif action == 'show qr code':
+                    logging.info("External command: show qr code")
+                    command_queue.put(('qr_code', ''))
         time.sleep(1)
 
 # Function to Process Commands from Queue
+# def process_commands():
+#     while True:
+#         if not command_queue.empty():
+#             cmd, payload = command_queue.get()
+#             if cmd == 'display':
+#                 update_display(msg=payload)
+#                 set_mode_action()
+#             elif cmd == 'clear':
+#                 clear_display()
+#                 set_mode_action()
+#             elif cmd == 'qr_code':
+#                 qr_code_btn()
+#                 set_mode_action()
+#         time.sleep(0.1)
 def process_commands():
     while True:
         if not command_queue.empty():
             cmd, payload = command_queue.get()
             if cmd == 'display':
                 update_display(msg=payload)
+                logging.info(f"Processed command: display '{payload}'")
                 set_mode_action()
+                render_menu()  # Display "<- Back"
             elif cmd == 'clear':
                 clear_display()
+                logging.info("Processed command: clear")
                 set_mode_action()
+                render_menu()  # Display "<- Back"
             elif cmd == 'qr_code':
                 qr_code_btn()
+                logging.info("Processed command: show qr code")
                 set_mode_action()
+                render_menu()  # Display "<- Back"
         time.sleep(0.1)
-
 # Function to Initialize and Render Menu
 def initialize_menu():
     backlight.on()  # Ensure backlight is on before initializing the menu
