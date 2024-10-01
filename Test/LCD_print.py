@@ -29,7 +29,7 @@ def update_display():
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     draw.rectangle((0, 0, device.width, device.height), outline=0, fill=(0, 0, 0))
-    draw.text((10, 10), "Button Pressed!", font=font, fill=(255, 255, 255))
+    draw.text((10, 10), "Welcome!", font=font, fill=(255, 255, 255))
     device.display(image)
     print("Display updated")
 
