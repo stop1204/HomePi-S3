@@ -18,6 +18,7 @@ from enum import Enum
 from queue import Queue
 import logging
 import datetime
+from DHT11 import DHT11, DHT11Result  # call the customer  library
 
 
 # GPIO Configuration using gpiozero
@@ -26,6 +27,7 @@ BUTTON_UP_PIN = 20      # Yellow-Up (GPIO 20)
 BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 16   # Green-Right (GPIO 16)
 BUTTON_DOWN_PIN = 21    # Blue-Bottom (GPIO 21)
+DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
@@ -49,9 +51,7 @@ char_width, char_height = 0, 0
 LOG_FILE = "operation.log"
 IP = "0.0.0.0"
 BT = {}
-
-current_display_mode = "menu"  # ["menu","action", "scrolling"]
-scrolling_context = None
+DHT = {}
 
 # Clear the log file on startup
 with open(LOG_FILE, 'w') as log_file:
@@ -130,27 +130,6 @@ class Menu:
     def get_display_items(self):
         return [item.title for item in self.current.children]
 
-class ScrollingContext:
-    def __init__(self, content_lines, reverse_order=False):
-        if reverse_order:
-            content_lines = list(reversed(content_lines))
-        self.content_lines = content_lines
-        self.total_lines = len(content_lines)
-        self.current_scroll_index = 0
-        self.lines_per_page = (device.height - 2 * char_height) // char_height  # 保留第一行状态和最后一行指令
-
-    def scroll_up(self):
-        if self.current_scroll_index > 0:
-            self.current_scroll_index -= 1
-            logging.info(f"Scrolled up to line {self.current_scroll_index}")
-
-    def scroll_down(self):
-        if self.current_scroll_index < self.total_lines - self.lines_per_page:
-            self.current_scroll_index += 1
-            logging.info(f"Scrolled down to line {self.current_scroll_index}")
-
-    def get_visible_lines(self):
-        return self.content_lines[self.current_scroll_index:self.current_scroll_index + self.lines_per_page]
 
 # Initialize Command Queue
 command_queue = Queue()
@@ -349,7 +328,11 @@ def render_menu():
     if menu.history:
         instruction = "<- Back"
     else:
-        instruction = "Select ->"
+        instruction = "Select -> "
+        if DHT.get('temperature') is not None:
+            instruction += f"{DHT['temperature']}°C,H:{DHT['humidity']}%"
+        else:
+            instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
     draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
     # elif current_mode == "action":
     #     # In action mode, just display the action content and "<- Back"
@@ -423,6 +406,26 @@ def check_lcd_command():
                     command_queue.put(('qr_code', ''))
         time.sleep(1)
 
+def dht11_read():
+    global DHT
+    try:
+        while True:
+            result = DHT11_PIN.read()
+            if result.is_valid():
+                DHT['temperature'] = result.temperature
+                DHT['humidity'] = result.humidity
+
+
+                print(f"Temp.: {result.temperature}°C, H: {result.humidity}%")
+            else:
+                DHT['error_code'] = result.error_code
+                print(f"DHT11 Error: {result.error_code}")
+
+            time.sleep(2)
+
+    except KeyboardInterrupt:
+        print("DHT11 Stopped!")
+
 # Function to Process Commands from Queue
 # def process_commands():
 #     while True:
@@ -493,6 +496,7 @@ def initialize_menu():
 # Start Threads for Command Checking and Processing
 threading.Thread(target=check_lcd_command, daemon=True).start()
 threading.Thread(target=process_commands, daemon=True).start()
+threading.Thread(target=dht11_read, daemon=True).start()
 
 # Initialize Menu and Render Initial Display
 initialize_menu()
