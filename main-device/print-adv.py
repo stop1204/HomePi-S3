@@ -1,6 +1,8 @@
 import io
 import json
 import string
+import subprocess
+
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
 from luma.lcd.device import st7735
@@ -39,15 +41,17 @@ button_down = Button(BUTTON_DOWN_PIN)    # Blue-Bottom
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
 device = st7735(serial, width=160, height=128, rotate=1)
 time.sleep(0.2)
-# Global variable to manage current display image
-current_display_image = None  # New global variable
 
 # Initialize Character Dimensions
 char_width, char_height = 0, 0
 
 # setup logging
 LOG_FILE = "operation.log"
+IP = "0.0.0.0"
+BT = {}
 
+current_display_mode = "menu"  # ["menu","action", "scrolling"]
+scrolling_context = None
 
 # Clear the log file on startup
 with open(LOG_FILE, 'w') as log_file:
@@ -126,6 +130,28 @@ class Menu:
     def get_display_items(self):
         return [item.title for item in self.current.children]
 
+class ScrollingContext:
+    def __init__(self, content_lines, reverse_order=False):
+        if reverse_order:
+            content_lines = list(reversed(content_lines))
+        self.content_lines = content_lines
+        self.total_lines = len(content_lines)
+        self.current_scroll_index = 0
+        self.lines_per_page = (device.height - 2 * char_height) // char_height  # 保留第一行状态和最后一行指令
+
+    def scroll_up(self):
+        if self.current_scroll_index > 0:
+            self.current_scroll_index -= 1
+            logging.info(f"Scrolled up to line {self.current_scroll_index}")
+
+    def scroll_down(self):
+        if self.current_scroll_index < self.total_lines - self.lines_per_page:
+            self.current_scroll_index += 1
+            logging.info(f"Scrolled down to line {self.current_scroll_index}")
+
+    def get_visible_lines(self):
+        return self.content_lines[self.current_scroll_index:self.current_scroll_index + self.lines_per_page]
+
 # Initialize Command Queue
 command_queue = Queue()
 
@@ -134,23 +160,29 @@ current_mode = "menu"  # can be "menu" or "action"
 
 # Define Menu Actions
 def display_device_status():
-    status = "Device Status:\n- Backlight: On\n- Buttons: Active\n- LCD: Working"
+    global IP,BT
+    status = (f"Device Status:\n- Backlight: On\n- Buttons: Active\n- LCD: Working"
+              f"\n- IP:{IP}"
+              f"\n- Bluetooth:"
+              f"\n  - Name: {BT.get('Name', 'Unknown')}"
+              f"\n  - Powered: {BT.get('Powered', 'Unknown')}"
+              f"\n  - Discoverable: {BT.get('Discoverable', 'Unknown')}")
     update_display(msg=status)
     logging.info("Displayed device status.")
     set_mode_action()
-    render_menu()  # Display "<- Back"
+    # render_menu()  # Display "<- Back"
 
 def clear_screen():
     clear_display()
     logging.info("Cleared the display.")
     set_mode_action()
-    render_menu()  # Display "<- Back"
+    # render_menu()  # Display "<- Back"
 
 def show_qr_code():
     qr_code_btn()
     logging.info("Displayed QR code.")
     set_mode_action()
-    render_menu()  # Display "<- Back"
+    # render_menu()  # Display "<- Back"
 
 # def display_custom_message():
 #     update_display("Custom Message!")
@@ -161,7 +193,7 @@ def display_custom_message():
     update_display(msg=message)
     logging.info(f"Displayed message: '{message}'")
     set_mode_action()
-    render_menu()  # Display "<- Back"
+    # render_menu()  # Display "<- Back"
 
 def display_console_logs():
     if not os.path.exists(LOG_FILE):
@@ -173,13 +205,13 @@ def display_console_logs():
         update_display(msg=logs)
         logging.info("Displayed console logs.")
     set_mode_action()
-    render_menu()  # Display "<- Back"
+    # render_menu()  # Display "<- Back"
 
 
 # Create Menu Structure
 root_menu = MenuItem("Main Menu", children=[
     MenuItem("Display Message", action=lambda: display_custom_message()),
-    MenuItem("Show QR Code", action=show_qr_code),
+    MenuItem("Show Web Addr.", action=show_qr_code),
     MenuItem("Device Status", action=display_device_status),
     MenuItem("Clear Screen", action=clear_screen),
     MenuItem("Console", action=display_console_logs)  # New Console menu item
@@ -213,9 +245,7 @@ def clear_display():
 
 # Function to Update Display with a Message
 def update_display(msg="", xy=(10,10), fill=ColorPalette.WHITE.value):
-    global current_display_image
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
-
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     draw.multiline_text(xy=xy, text=msg, font=font, fill=fill)
@@ -285,34 +315,46 @@ def display_qr_code_on_lcd(svg_data):
 
 # Function to Render the Menu on LCD
 def render_menu():
-    global current_mode,current_display_image
+    global current_mode
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     print(f"mode: {current_mode}")
-    if current_mode == "menu":
-        menu_items = menu.get_display_items()
-        for idx, item in enumerate(menu_items):
-            if idx == menu.selected_index:
-                fill = ColorPalette.YELLOW.value  # Highlighted item color
-            else:
-                fill = ColorPalette.WHITE.value
-            y_position = idx * char_height
-            # Ensure text is within display bounds
-            if y_position + char_height < device.height - char_height:
-                draw.text((10, y_position), item, font=font, fill=fill)
-
-        # Display operation instructions on the last line
-        if menu.history:
-            instruction = "<- Back"
+    # if current_mode == "menu":
+    menu_items = menu.get_display_items()
+    for idx, item in enumerate(menu_items):
+        if idx == menu.selected_index:
+            # fill = ColorPalette.YELLOW.value  # Highlighted item color
+            background_color = ColorPalette.BLUE.value
+            text_color = ColorPalette.WHITE.value
         else:
-            instruction = "Select ->"
-        draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
-    elif current_mode == "action":
-        # In action mode, just display the action content and "<- Back"
-        # Assuming the action has already updated the display
-        draw = ImageDraw.Draw(current_display_image)
-        draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
+            # fill = ColorPalette.WHITE.value
+            # fill = ColorPalette.YELLOW.value  # Highlighted item color
+            background_color = ColorPalette.BLACK.value
+            text_color = ColorPalette.WHITE.value
+
+        y_position = idx * char_height
+        # Ensure text is within display bounds
+        if y_position + char_height < device.height - char_height:
+            # draw.text((10, y_position), item, font=font, fill=fill)
+            # background
+            draw.rectangle(
+                [(0, y_position), (device.width, y_position + char_height)],
+                fill=background_color
+            )
+            # text
+            draw.text((10, y_position), item, font=font, fill=text_color)
+
+    # Display operation instructions on the last line
+    if menu.history:
+        instruction = "<- Back"
+    else:
+        instruction = "Select ->"
+    draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
+    # elif current_mode == "action":
+    #     # In action mode, just display the action content and "<- Back"
+    #     # Assuming the action has already updated the display
+    #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
     device.display(image)
     print("Menu rendered")
@@ -404,22 +446,48 @@ def process_commands():
                 update_display(msg=payload)
                 logging.info(f"Processed command: display '{payload}'")
                 set_mode_action()
-                render_menu()  # Display "<- Back"
+                # render_menu()  # Display "<- Back"
             elif cmd == 'clear':
                 clear_display()
                 logging.info("Processed command: clear")
                 set_mode_action()
-                render_menu()  # Display "<- Back"
+                # render_menu()  # Display "<- Back"
             elif cmd == 'qr_code':
                 qr_code_btn()
                 logging.info("Processed command: show qr code")
                 set_mode_action()
-                render_menu()  # Display "<- Back"
+                # render_menu()  # Display "<- Back"
         time.sleep(0.1)
+
 # Function to Initialize and Render Menu
 def initialize_menu():
+    global IP,BT
+
     backlight.on()  # Ensure backlight is on before initializing the menu
-    calculate_screen_size()
+    time.sleep(0.1)
+    backlight.off()
+    time.sleep(0.1)
+    backlight.on()
+    time.sleep(0.1)
+    backlight.off()
+    time.sleep(0.1)
+    backlight.on()
+    # hostname -I
+    # example: 192.168.50.254 192.168.0.1 fd3a:cce6:35f6:b144:ba27:ebff:fe92:556a fd3a:cce6:35f6:b144:1453:384:c821:781
+    result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, check=True)
+    IP = result.stdout.split()[0]
+    # bluetoothctl show
+    # get Powered and Discoverable
+    # example: Powered: yes Discoverable: yes
+    result = subprocess.run(['bluetoothctl', 'show'], capture_output=True, text=True, check=True)
+
+
+    for line in result.stdout.split('\n'):
+        parts = line.strip().split(': ')
+        if len(parts) == 2:
+            BT[parts[0].strip()] = parts[1].strip()
+
+    calculate_screen_size() # this will set char_width and char_height,must be exist
     render_menu()
 
 # Start Threads for Command Checking and Processing
