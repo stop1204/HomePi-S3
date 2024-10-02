@@ -23,7 +23,7 @@ import datetime
 import RPi.GPIO as GPIO
 import textwrap
 
-from DHT11 import DHT11, DHT11Result  # call the customer  library
+from DHT11 import DHT11  # call the customer  library
 GPIO.cleanup()
 
 # GPIO Configuration using gpiozero
@@ -180,7 +180,42 @@ class Menu:
 
 
 
+class IoTHttp:
+    """
+    update:https://sgp1.blynk.cloud/external/api/update?token=34RJEE0vA7lH4A2E2lmFpUD63vcu63J_&v0=value
+    get:https://sgp1.blynk.cloud/external/api/get?token=34RJEE0vA7lH4A2E2lmFpUD63vcu63J_&v0
+    # set:https://sgp1.blynk.cloud/external/api/update/property?token=34RJEE0vA7lH4A2E2lmFpUD63vcu63J_&pin=v0&color=%2374747a
 
+    """
+    """
+    add enum to map the pin
+    v0: LED   on 1 / off 0
+        https://sgp1.blynk.cloud/external/api/update?token=34RJEE0vA7lH4A2E2lmFpUD63vcu63J_&v0=0
+    v1: DOOR   on 1 / off 0
+    V2: CURTAIN  on 1 / off 0
+    V3: HUMIDITY 
+    V4: TEMP
+    """
+
+
+    def __init__(self):
+        self.url = "https://sgp1.blynk.cloud/external/api/"
+        self.token = "34RJEE0vA7lH4A2E2lmFpUD63vcu63J_"
+        self.tag = {
+            "LED": 0,
+            "DOOR": 1,
+            "CURTAIN": 2,
+            "HUMIDITY": 3,
+            "TEMP": 4}
+
+    def get(self, pin):
+        response = requests.get(f"{self.url}get?token={self.token}&v{pin}")
+
+        # return response.json()
+
+    def update(self,pin, data):
+        response = requests.get(f"{self.url}update?token={self.token}&v{pin}={data}")
+        # return response.json()
 
 def wrap_text(text, max_width):
     return textwrap.wrap(text, width=max_width)
@@ -263,10 +298,11 @@ root_menu = MenuItem("Main Menu", children=[
     MenuItem("Display Message", action=lambda: display_custom_message()),
     MenuItem("Show Web Addr.", action=show_qr_code),
     MenuItem("Device Status", action=display_device_status),
-    # MenuItem("WIFI", action=lambda: display_wifi_status()),
-    MenuItem("WIFI", children=[
-        MenuItem("Scan WIFI", action=lambda: scan_wifi_networks())  # level 2 menu item
-    ]),
+    MenuItem("WIFI", action=lambda: display_wifi_status()),
+    # MenuItem("WIFI",action=lambda: display_wifi_status(), children=[
+    #     MenuItem(selected_wifi_network, action=lambda: scan_wifi_networks())  # level 2 menu item
+    #     MenuItem("Scan WIFI", action=lambda: scan_wifi_networks())  # level 2 menu item
+    # ]),
     MenuItem("Clear Screen", action=clear_screen),
     MenuItem("Console", action=display_console_logs)  # New Console menu item
 ])
@@ -337,7 +373,7 @@ def set_mode_menu():
     current_mode = "menu"
     print(f"mode: {current_mode}")
 def display_wifi_status():
-    global scroll_context
+    global scroll_context,current_wifi_network
     try:
         # get active wifi connection
         result = subprocess.run(['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'], capture_output=True, text=True, check=True)
@@ -348,13 +384,12 @@ def display_wifi_status():
             if active == 'yes':
                 connected_ssid = ssid
                 break
-        status = f"Connected WIFI: {connected_ssid}"
+        status = f"Connected WIFI: {connected_ssid}\n\nPress Right-btn to\n scan WiFi"
     except Exception as e:
-        status = "Connected WIFI: N/A"
+        status = "Connected WIFI: N/A\n\nPress Right-btn to\n scan WiFi"
         logging.error(f"Error fetching WiFi status: {e}")
-
-    scroll_context = ScrollContext(content_lines=[status])
-
+    lines = wrap_text(status, device.width // char_width)
+    scroll_context = ScrollContext(content_lines=lines)
     render_scrolling_display()
     logging.info("WIFI status.")
 def scan_wifi_networks():
@@ -372,8 +407,11 @@ def scan_wifi_networks():
     except Exception as e:
         wifi_networks = ["Error scanning WIFI networks."]
         logging.error(f"Error scanning WiFi networks: {e}")
+    wrapped_lines = []
+    for network in wifi_networks:
+        wrapped_lines.extend(wrap_text(network, device.width // char_width))
 
-    scroll_context = ScrollContext(content_lines=wifi_networks)
+    scroll_context = ScrollContext(content_lines=wrapped_lines)
     selected_wifi_network = None
     render_scrolling_display()
     logging.info("scanned WIFI networks.")
@@ -465,7 +503,9 @@ def render_menu():
         if DHT.get('temperature') is not None:
             instruction += f"{DHT['temperature']}°C,H:{DHT['humidity']}%"
         else:
-            instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
+
+            # instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
+            instruction += "Sys:{}".format(DHT.get('sys_temp', '-1'))
     draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
     # elif current_mode == "action":
     #     # In action mode, just display the action content and "<- Back"
@@ -643,7 +683,7 @@ def check_lcd_command():
         time.sleep(1)
 
 def dht11_read():
-    global DHT
+    global DHT,current_mode
     try:
         while True:
             result = DHT11_PIN.read()
@@ -651,11 +691,23 @@ def dht11_read():
                 DHT['temperature'] = result.temperature
                 DHT['humidity'] = result.humidity
 
-
+                # remove the 'C and %'
+                DHT['temperature'] = DHT['temperature'].replace('\'C', '')
+                DHT['humidity'] = DHT['humidity'].replace('%', '')
+                IoTHttp().update(IoTHttp().tag['TEMP'], DHT['temperature'])
+                IoTHttp().update(IoTHttp().tag['HUMIDITY'], DHT['humidity'])
                 print(f"Temp.: {result.temperature}°C, H: {result.humidity}%")
             else:
                 DHT['error_code'] = result.error_code
                 print(f"DHT11 Error: {result.error_code}")
+                DHT['sys_temp'] = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True, text=True,
+                                                 check=True).stdout.strip().split('=')[1]
+                # System Temp.: 46.2'C
+                # remove the 'C
+                DHT['sys_temp'] = DHT['sys_temp'].replace('\'C', '')
+                IoTHttp().update(IoTHttp().tag['TEMP'], DHT['sys_temp'])
+            if current_mode == "menu":
+                render_menu()
 
             time.sleep(2)
 
@@ -682,18 +734,31 @@ def process_commands():
         if not command_queue.empty():
             cmd, payload = command_queue.get()
             if cmd == 'display':
-                # update_display(msg=payload)
-                lines = payload.split('\n')
-                logging.info(f"Processed command: display '{payload}'")
-                global scroll_context, current_mode
-                scroll_context = ScrollContext(content_lines=lines)
+                # # update_display(msg=payload)
+                # lines = payload.split('\n')
+                # logging.info(f"Processed command: display '{payload}'")
+                global scroll_context
+                # scroll_context = ScrollContext(content_lines=lines)
+                # render_scrolling_display()
+                # # render_menu()  # Display "<- Back"
+
+                message = payload
+
+                wrapped_lines = []
+                for line in message.split('\n'):
+                    wrapped_lines.extend(wrap_text(line, device.width // char_width))
+
+                scroll_context = ScrollContext(content_lines=wrapped_lines)
+
                 render_scrolling_display()
-                # render_menu()  # Display "<- Back"
+                logging.info(f"Processed command: display '{payload}'")
             elif cmd == 'clear':
+                global current_mode
                 clear_display()
                 logging.info("Processed command: clear")
-                set_mode_action()
-                # render_menu()  # Display "<- Back"
+                current_mode = "menu"
+                scroll_context = None
+                render_menu()
             elif cmd == 'qr_code':
                 qr_code_btn()
                 logging.info("Processed command: show qr code")
@@ -721,6 +786,7 @@ def initialize_menu():
     # bluetoothctl show
     # get Powered and Discoverable
     # example: Powered: yes Discoverable: yes
+
     result = subprocess.run(['bluetoothctl', 'show'], capture_output=True, text=True, check=True)
 
 

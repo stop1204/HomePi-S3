@@ -379,14 +379,16 @@ def send_command():
 @app.route('/get_log')
 def get_log():
     try:
-        with open('rfcomm_log.txt', 'r') as f:
+        with open(log_path, 'r') as f:
             log_content = f.read()
         # just return the last 50 lines
         lines = log_content.split('\n')
-        last_lines = '\n'.join(lines[-50:])
+        last_lines = '\n</br>'.join(lines[-50:])
         return last_lines
     except FileNotFoundError:
-        return ''
+        return 'Log file not found.'
+    except Exception as e:
+        return f'Error reading log file: {e}'
 
 @app.route('/lcd_control', methods=['POST'])
 def lcd_control():
