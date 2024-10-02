@@ -2,7 +2,9 @@ import io
 import json
 import string
 import subprocess
+import sys
 
+import gpiozero
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
 from luma.lcd.device import st7735
@@ -18,15 +20,18 @@ from enum import Enum
 from queue import Queue
 import logging
 import datetime
-from DHT11 import DHT11, DHT11Result  # call the customer  library
+import RPi.GPIO as GPIO
 
+
+from DHT11 import DHT11, DHT11Result  # call the customer  library
+GPIO.cleanup()
 
 # GPIO Configuration using gpiozero
 BACKLIGHT_PIN = 18      # Backlight controlled via GPIO 18
-BUTTON_UP_PIN = 20      # Yellow-Up (GPIO 20)
+BUTTON_UP_PIN = 23      # Yellow-Up (GPIO 20) -> change to 23
 BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
-BUTTON_RIGHT_PIN = 16   # Green-Right (GPIO 16)
-BUTTON_DOWN_PIN = 21    # Blue-Bottom (GPIO 21)
+BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
+BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
 DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
 
 # Initialize Backlight LED
@@ -42,6 +47,7 @@ button_down = Button(BUTTON_DOWN_PIN)    # Blue-Bottom
 # Initialize LCD
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
 device = st7735(serial, width=160, height=128, rotate=1)
+
 time.sleep(0.2)
 
 # Initialize Character Dimensions
@@ -52,6 +58,14 @@ LOG_FILE = "operation.log"
 IP = "0.0.0.0"
 BT = {}
 DHT = {}
+
+# Define Password Dictionary,  1: Yellow-Up, 2: Red-Left, 3: Green-Right, 4: Blue-Bottom
+password_dict = {
+    "restart": [2, 2, 2, 2, 2]  # Press the buttons in this order to restart the script
+    ,
+    # "shutdown": [4, 3, 2, 1]
+}
+button_sequence = []  # Stores the sequence of button presses
 
 # Clear the log file on startup
 with open(LOG_FILE, 'w') as log_file:
@@ -147,7 +161,7 @@ def display_device_status():
               f"\n  - Powered: {BT.get('Powered', 'Unknown')}"
               f"\n  - Discoverable: {BT.get('Discoverable', 'Unknown')}")
     update_display(msg=status)
-    logging.info("Displayed device status.")
+    logging.info("device status.")
     set_mode_action()
     # render_menu()  # Display "<- Back"
 
@@ -159,7 +173,7 @@ def clear_screen():
 
 def show_qr_code():
     qr_code_btn()
-    logging.info("Displayed QR code.")
+    logging.info("QR code.")
     set_mode_action()
     # render_menu()  # Display "<- Back"
 
@@ -170,7 +184,7 @@ def show_qr_code():
 def display_custom_message():
     message = "Hello, World!"
     update_display(msg=message)
-    logging.info(f"Displayed message: '{message}'")
+    logging.info(f"message: '{message}'")
     set_mode_action()
     # render_menu()  # Display "<- Back"
 
@@ -182,7 +196,7 @@ def display_console_logs():
         with open(LOG_FILE, 'r') as log_file:
             logs = log_file.read()
         update_display(msg=logs)
-        logging.info("Displayed console logs.")
+        logging.info("console logs.")
     set_mode_action()
     # render_menu()  # Display "<- Back"
 
@@ -353,23 +367,76 @@ def button_back_pressed():
     menu.back()
     render_menu()  # Ensure the menu or action screen is rendered correctly
 
+def button_press_handler(button):
+    """
+    Handle button press events
+    :param button: "up", "down", "right", "left"
+    mapping values: 1: Yellow-Up, 2: Red-Left, 3: Green-Right, 4: Blue-Bottom
+    :return: nil
+    """
+    value = 0
+    if button == "up":
+        value = 1
+    elif button == "down":
+        value = 4
+    elif button == "right":
+        value = 3
+    elif button == "left":
+        value = 2
+
+    global button_sequence
+    if len(button_sequence)<5:
+        button_sequence.append(value)
+    else:
+        button_sequence.pop(0)
+        button_sequence.append(value)
+
+    for key, value in password_dict.items():
+        if button_sequence == value:
+            button_sequence.pop(0)
+            button_sequence.append(0)
+            print(f"Password matched: {key}")
+            if key == "restart":
+                logging.info("Restarting script.")
+                update_display("Restarting script...")
+                # os.system("sudo reboot")
+                # release gpio
+                GPIO.cleanup()
+
+                subprocess.run(['sudo','./print.sh','&'])
+                # sys.exit("Restarting script...")
+                # os._exit(0)
+                exit(0)
+
+            elif key == "shutdown":
+                logging.info("Shutting down device.")
+                update_display("Shutting down device...")
+                time.sleep(1)
+                os.system("sudo shutdown now")
+
+            break
+
 # Button Press Handlers
 def button_up_pressed():
+    button_press_handler("up")
     if current_mode == "menu":
         print("Yellow-Up pressed")
         menu.navigate_up()
 
 def button_down_pressed():
+    button_press_handler("down")
     if current_mode == "menu":
         print("Blue-Bottom pressed")
         menu.navigate_down()
 
 def button_select_pressed():
+    button_press_handler("right")
     if current_mode == "menu":
         print("Green-Right pressed")
         menu.select()
 
 def button_back_pressed():
+    button_press_handler("left")
     print("Red-Left pressed")
     menu.back()
 
