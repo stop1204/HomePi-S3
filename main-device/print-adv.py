@@ -54,6 +54,7 @@ time.sleep(0.2)
 char_width, char_height = 0, 0
 
 # setup logging
+rootpath = "/home/terry/Desktop/HomePi-S3/"
 LOG_FILE = "operation.log"
 IP = "0.0.0.0"
 BT = {}
@@ -272,11 +273,13 @@ def qr_code_btn():
             display_qr_code_on_lcd(svg_data)
 
 # Function to Get Tunnel URL from File
-def get_tunnel_url(file_path="../nohup.out"):
-    if not os.path.exists(file_path):
+def get_tunnel_url(file_path="/nohup.out"):
+    global rootpath
+    path = rootpath + file_path
+    if not os.path.exists(path):
         print("Tunnel URL file not found.")
         return None
-    with open(file_path, 'r') as file:
+    with open(path, 'r') as file:
         content = file.read()
         match = re.search(r'Tunnel established at (http[^\s]+)', content)
         if match:
@@ -403,7 +406,7 @@ def button_press_handler(button):
                 # release gpio
                 GPIO.cleanup()
 
-                subprocess.run(['sudo','./print.sh','&'])
+                subprocess.run(['sudo',rootpath+'main-device/print.sh','&'])
                 # sys.exit("Restarting script...")
                 # os._exit(0)
                 exit(0)
@@ -448,7 +451,8 @@ button_left.when_pressed = button_back_pressed
 
 # Function to Check and Queue External Commands
 def check_lcd_command():
-    command_files = ['/lcd_command.txt', '../lcd_command.txt']
+    global rootpath
+    command_files = [rootpath+'/lcd_command.txt', rootpath+'../lcd_command.txt']
     while True:
         for command_file in command_files:
             if os.path.exists(command_file):
