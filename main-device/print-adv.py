@@ -21,7 +21,7 @@ from queue import Queue
 import logging
 import datetime
 import RPi.GPIO as GPIO
-
+import textwrap
 
 from DHT11 import DHT11, DHT11Result  # call the customer  library
 GPIO.cleanup()
@@ -55,6 +55,7 @@ char_width, char_height = 0, 0
 
 # setup logging
 rootpath = "/home/terry/Desktop/HomePi-S3/"
+
 LOG_FILE = "operation.log"
 IP = "0.0.0.0"
 BT = {}
@@ -80,6 +81,38 @@ logging.basicConfig(
     datefmt='%H:%M'
 )
 
+current_mode = "menu"  # menu or action or scrolling or keyboard
+scroll_context = None
+
+selected_wifi_network = None
+
+# Initialize Command Queue
+command_queue = Queue()
+
+
+class ScrollContext:
+    def __init__(self, content_lines, reverse_order=False):
+        if reverse_order:
+            content_lines = list(reversed(content_lines))
+        self.content_lines = content_lines
+        self.total_lines = len(content_lines)
+        self.current_scroll_index = 0
+        self.lines_per_page = (device.height // char_height) - 2  # KEEP 2 lines for the operation instructions
+
+    def scroll_up(self):
+        if self.current_scroll_index > 0:
+            self.current_scroll_index -= 1
+            logging.info(f"Scrolled up to line {self.current_scroll_index}")
+            print(f"Scrolled up to line {self.current_scroll_index}")
+
+    def scroll_down(self):
+        if self.current_scroll_index < self.total_lines - self.lines_per_page:
+            self.current_scroll_index += 1
+            logging.info(f"Scrolled down to line {self.current_scroll_index}")
+            print(f"Scrolled down to line {self.current_scroll_index}")
+
+    def get_visible_lines(self):
+        return self.content_lines[self.current_scroll_index:self.current_scroll_index + self.lines_per_page]
 
 # Define Color Palette
 class ColorPalette(Enum):
@@ -129,13 +162,13 @@ class Menu:
             render_menu()
         elif selected_item.action:
             selected_item.action()
-            set_mode_action()
+            # set_mode_action()
 
     def back(self):
         global current_mode
         if current_mode == "action":
             # Return to menu from action
-            current_mode = "menu"
+            set_mode_menu() # current_mode = "menu"
             render_menu()
         else:
             if self.history:
@@ -146,24 +179,27 @@ class Menu:
         return [item.title for item in self.current.children]
 
 
-# Initialize Command Queue
-command_queue = Queue()
 
-# Global variable to manage current mode
-current_mode = "menu"  # can be "menu" or "action"
+
+
+def wrap_text(text, max_width):
+    return textwrap.wrap(text, width=max_width)
 
 # Define Menu Actions
 def display_device_status():
-    global IP,BT
+    global IP,BT,scroll_context
     status = (f"Device Status:\n- Backlight: On\n- Buttons: Active\n- LCD: Working"
               f"\n- IP:{IP}"
               f"\n- Bluetooth:"
               f"\n  - Name: {BT.get('Name', 'Unknown')}"
               f"\n  - Powered: {BT.get('Powered', 'Unknown')}"
               f"\n  - Discoverable: {BT.get('Discoverable', 'Unknown')}")
-    update_display(msg=status)
+    # update_display(msg=status)
     logging.info("device status.")
-    set_mode_action()
+    set_mode_scrolling()
+    lines = status.split('\n')
+    scroll_context = ScrollContext(content_lines=lines)
+    render_scrolling_display()
     # render_menu()  # Display "<- Back"
 
 def clear_screen():
@@ -183,22 +219,42 @@ def show_qr_code():
 #     logging.info("Displayed custom message.")
 # Define Menu Actions
 def display_custom_message():
-    message = "Hello, World!"
-    update_display(msg=message)
+    global scroll_context
+    message = ("Hello, World!\n"
+               "This is a custom message displayed on the LCD.\n"
+               "You can scroll up and down to read all the content.\n"
+               "Enjoy using your Raspberry Pi!\n")
+    # update_display(msg=message)
     logging.info(f"message: '{message}'")
-    set_mode_action()
+    set_mode_scrolling()
+    lines = message.split('\n')
+    # scroll_context = ScrollContext(content_lines=lines)
+    wrapped_lines = []
+    for line in lines:
+        wrapped_lines.extend(wrap_text(line, device.width // char_width))
+    scroll_context = ScrollContext(content_lines=wrapped_lines)
+    render_scrolling_display()
     # render_menu()  # Display "<- Back"
 
 def display_console_logs():
+    global scroll_context
+    set_mode_scrolling()
     if not os.path.exists(LOG_FILE):
         update_display("No logs available.")
         logging.warning("Attempted to display logs, but log file does not exist.")
     else:
         with open(LOG_FILE, 'r') as log_file:
             logs = log_file.read()
-        update_display(msg=logs)
+        # update_display(msg=logs)
         logging.info("console logs.")
-    set_mode_action()
+        lines = logs.split('\n')
+        lines = list(reversed(lines))
+        # scroll_context = ScrollContext(content_lines=lines)
+        wrapped_lines = []
+        for line in lines:
+            wrapped_lines.extend(wrap_text(line, device.width // char_width))
+        scroll_context = ScrollContext(content_lines=wrapped_lines)
+        render_scrolling_display()
     # render_menu()  # Display "<- Back"
 
 
@@ -207,6 +263,10 @@ root_menu = MenuItem("Main Menu", children=[
     MenuItem("Display Message", action=lambda: display_custom_message()),
     MenuItem("Show Web Addr.", action=show_qr_code),
     MenuItem("Device Status", action=display_device_status),
+    # MenuItem("WIFI", action=lambda: display_wifi_status()),
+    MenuItem("WIFI", children=[
+        MenuItem("Scan WIFI", action=lambda: scan_wifi_networks())  # level 2 menu item
+    ]),
     MenuItem("Clear Screen", action=clear_screen),
     MenuItem("Console", action=display_console_logs)  # New Console menu item
 ])
@@ -261,7 +321,62 @@ def toggle_backlight():
 def set_mode_action():
     global current_mode
     current_mode = "action"
+    print(f"mode: {current_mode}")
+# Function to Set Mode to scrolling
+def set_mode_scrolling():
+    global current_mode
+    current_mode = "scrolling"
+    print(f"mode: {current_mode}")
+# function to set mode to keyboard
+def set_mode_keyboard():
+    global current_mode
+    current_mode = "keyboard"
+    print(f"mode: {current_mode}")
+def set_mode_menu():
+    global current_mode
+    current_mode = "menu"
+    print(f"mode: {current_mode}")
+def display_wifi_status():
+    global scroll_context
+    try:
+        # get active wifi connection
+        result = subprocess.run(['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'], capture_output=True, text=True, check=True)
+        lines = result.stdout.strip().split('\n')
+        connected_ssid = "N/A"
+        for line in lines:
+            active, ssid = line.split(':')
+            if active == 'yes':
+                connected_ssid = ssid
+                break
+        status = f"Connected WIFI: {connected_ssid}"
+    except Exception as e:
+        status = "Connected WIFI: N/A"
+        logging.error(f"Error fetching WiFi status: {e}")
 
+    scroll_context = ScrollContext(content_lines=[status])
+
+    render_scrolling_display()
+    logging.info("WIFI status.")
+def scan_wifi_networks():
+    global scroll_context, selected_wifi_network
+    try:
+        # get active wifi connection
+        result = subprocess.run(['nmcli', '-t', '-f', 'SSID,SECURITY', 'dev', 'wifi', 'list'], capture_output=True, text=True, check=True)
+        lines = result.stdout.strip().split('\n')
+        wifi_networks = []
+        for line in lines:
+            ssid, security = line.split(':')
+            wifi_networks.append(f"{ssid} ({security})")
+        if not wifi_networks:
+            wifi_networks = ["No WIFI networks found."]
+    except Exception as e:
+        wifi_networks = ["Error scanning WIFI networks."]
+        logging.error(f"Error scanning WiFi networks: {e}")
+
+    scroll_context = ScrollContext(content_lines=wifi_networks)
+    selected_wifi_network = None
+    render_scrolling_display()
+    logging.info("scanned WIFI networks.")
 # Function to Generate and Display QR Code
 def qr_code_btn():
     clear_display()
@@ -312,10 +427,11 @@ def display_qr_code_on_lcd(svg_data):
 # Function to Render the Menu on LCD
 def render_menu():
     global current_mode
+    set_mode_menu()
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
-    print(f"mode: {current_mode}")
+
     # if current_mode == "menu":
     menu_items = menu.get_display_items()
     for idx, item in enumerate(menu_items):
@@ -357,18 +473,41 @@ def render_menu():
     #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
     device.display(image)
-    print("Menu rendered")
+    
+def render_scrolling_display():
+    global scroll_context, current_mode
+    if not scroll_context:
+        return  #  No content to display
 
+
+    set_mode_scrolling() # current_mode = "scrolling"  # set current mode to scrolling
+
+    image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    # status text
+    status_text = f"{scroll_context.total_lines} L, V: {scroll_context.current_scroll_index + 1}-{min(scroll_context.current_scroll_index + scroll_context.lines_per_page, scroll_context.total_lines)}"
+    draw.text((0, 0), status_text, font=font, fill=ColorPalette.CYAN.value)
+
+    # Display visible lines
+    visible_lines = scroll_context.get_visible_lines()
+    for idx, line in enumerate(visible_lines):
+        y_position = (idx + 1) * char_height  # skip the status line
+        draw.text((10, y_position), line, font=font, fill=ColorPalette.WHITE.value)
+
+    # show scrolling instructions
+    instruction = "<- Back"
+    draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
+
+    device.display(image)
+    logging.info("Scrolling display rendered.")
 # Function to Handle Menu Actions
 def handle_menu_action(action):
     if callable(action):
         action()
         set_mode_action()
         render_menu()  # Ensure the back instruction is displayed
-def button_back_pressed():
-    print("Red-Left pressed")
-    menu.back()
-    render_menu()  # Ensure the menu or action screen is rendered correctly
 
 def button_press_handler(button):
     """
@@ -421,27 +560,53 @@ def button_press_handler(button):
 
 # Button Press Handlers
 def button_up_pressed():
+    global current_mode, scroll_context
     button_press_handler("up")
     if current_mode == "menu":
         print("Yellow-Up pressed")
         menu.navigate_up()
-
+    elif current_mode == "scrolling":
+        print("Yellow-Up pressed, scrolling up")
+        if scroll_context:
+            scroll_context.scroll_up()
+            render_scrolling_display()
+        else:
+            logging.error("Scroll context is None while in scrolling mode.")
 def button_down_pressed():
+    global current_mode, scroll_context
     button_press_handler("down")
     if current_mode == "menu":
         print("Blue-Bottom pressed")
         menu.navigate_down()
 
+    elif current_mode == "scrolling":
+        print("Blue-Bottom pressed, scrolling down")
+
+        if scroll_context:
+            scroll_context.scroll_down()
+            render_scrolling_display()
+        else:
+            logging.error("Scroll context is None while in scrolling mode.")
 def button_select_pressed():
+    global current_mode, scroll_context
     button_press_handler("right")
     if current_mode == "menu":
-        print("Green-Right pressed")
+        # print("Green-Right pressed")
         menu.select()
 
 def button_back_pressed():
+    global current_mode, scroll_context
     button_press_handler("left")
-    print("Red-Left pressed")
-    menu.back()
+    # print("Red-Left pressed")
+    if current_mode == "scrolling":
+        set_mode_menu()
+        scroll_context = None
+        render_menu()
+        logging.info("Returned to menu from scrolling mode.")
+    else:
+        menu.back()
+
+
 
 # Bind Button Events to Handlers
 button_up.when_pressed = button_up_pressed
@@ -517,9 +682,12 @@ def process_commands():
         if not command_queue.empty():
             cmd, payload = command_queue.get()
             if cmd == 'display':
-                update_display(msg=payload)
+                # update_display(msg=payload)
+                lines = payload.split('\n')
                 logging.info(f"Processed command: display '{payload}'")
-                set_mode_action()
+                global scroll_context, current_mode
+                scroll_context = ScrollContext(content_lines=lines)
+                render_scrolling_display()
                 # render_menu()  # Display "<- Back"
             elif cmd == 'clear':
                 clear_display()
