@@ -18,7 +18,7 @@ try:
     while True:
         ldr = rc_time(light)
         print(ldr)
-        if ldr > 500:
+        if ldr > 200:
             GPIO.output(led, True)
         else:
             GPIO.output(led, False)
