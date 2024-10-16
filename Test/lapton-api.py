@@ -3,7 +3,8 @@ import openai
 # CLI command: export LEPTON_API_TOKEN="xhwg2y4dpim3vqu16z8ijtjxk12e93u6"
 LEPTON_API_TOKEN="xhwg2y4dpim3vqu16z8ijtjxk12e93u6"
 client = openai.OpenAI(
-    base_url="https://llama3-1-405b.lepton.run/api/v1/",
+    base_url="https://qwen2-72b.lepton.run/api/v1/",
+    # base_url="https://llama3-1-405b.lepton.run/api/v1/",
     # api_key=os.environ.get('LEPTON_API_TOKEN')
     api_key = LEPTON_API_TOKEN
 )
