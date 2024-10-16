@@ -671,6 +671,15 @@ def check_lcd_command():
                 os.remove(command_file)
                 action = command_data.get('action')
                 message = command_data.get('message', '')
+                """
+                        "- action: '[OPEN_DOOR]', message: ''\n"
+                        "- action: '[CLOSE_DOOR]', message: ''\n"
+                        "- action: '[TURN_ON_LIGHT]', message: ''\n"
+                        "- action: '[TURN_OFF_LIGHT]', message: ''\n"
+                        "- action: '[TURN_ON_FAN]', message: ''\n"
+                        "- action: '[TURN_OFF_FAN]', message: ''\n"
+                        "- action: '[UNKNOWN_COMMAND]', message: ''\n"
+                """
                 if action == 'display':
                     logging.info(f"External command: display '{message}'")
                     command_queue.put(('display', message))
@@ -680,6 +689,26 @@ def check_lcd_command():
                 elif action == 'show qr code':
                     logging.info("External command: show qr code")
                     command_queue.put(('qr_code', ''))
+                elif action == '[OPEN_DOOR]':
+                    logging.info("External command: open door")
+                    command_queue.put(('door', 'open'))
+                elif action == '[CLOSE_DOOR]':
+                    logging.info("External command: close door")
+                    command_queue.put(('door', 'close'))
+                elif action == '[TURN_ON_LIGHT]':
+                    logging.info("External command: turn on light")
+                    command_queue.put(('light', 'on'))
+                elif action == '[TURN_OFF_LIGHT]':
+                    logging.info("External command: turn off light")
+                    command_queue.put(('light', 'off'))
+                elif action == '[TURN_ON_FAN]':
+                    logging.info("External command: turn on fan")
+                    command_queue.put(('fan', 'on'))
+                elif action == '[TURN_OFF_FAN]':
+                    logging.info("External command: turn off fan")
+                    command_queue.put(('fan', 'off'))
+                elif action == '[UNKNOWN_COMMAND]':
+                    pass
         time.sleep(1)
 
 def dht11_read():
@@ -713,6 +742,12 @@ def dht11_read():
 
     except KeyboardInterrupt:
         print("DHT11 Stopped!")
+def door_action(action):
+    pass
+def light_action(action):
+    pass
+def fan_action(action):
+    pass
 
 # Function to Process Commands from Queue
 # def process_commands():
@@ -764,6 +799,16 @@ def process_commands():
                 logging.info("Processed command: show qr code")
                 set_mode_action()
                 # render_menu()  # Display "<- Back"
+            elif cmd == 'door':
+                # door_action(payload)
+                logging.info(f"Processed command: door '{payload}'")
+            elif cmd == 'light':
+                # light_action(payload)
+                logging.info(f"Processed command: light '{payload}'")
+            elif cmd == 'fan':
+                # fan_action(payload)
+                logging.info(f"Processed command: fan '{payload}'")
+
         time.sleep(0.1)
 
 # Function to Initialize and Render Menu

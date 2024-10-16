@@ -52,7 +52,6 @@ LED_PIN = 13     # GPIO pin number for the LED
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set button as input with pull-up resistor
 GPIO.setup(LED_PIN, GPIO.OUT)  # Set LED as output
-
 def record_audio(filename):
     """
     Record audio from the microphone and save it to a WAV file.
@@ -99,10 +98,17 @@ def send_audio_to_ai(audio_file_path):
                     "content": (
                         "You are a smart home assistant. Please convert the user's natural language command from the following audio into a JSON object with 'action' and 'message' fields based on the predefined actions below. Return only the JSON object.\n"
                         "Predefined actions:\n"
-                        "- action: 'display', message: <display message>\n"
-                        "- action: 'clear', message: ''\n"
-                        "- action: 'qr_code', message: ''\n"
-                        "- action: 'unknown', message: ''\n"
+                        # "- action: 'display', message: <display message>\n"
+                        # "- action: 'clear', message: ''\n"
+                        # "- action: 'qr_code', message: ''\n"
+                        # "- action: 'unknown', message: ''\n"
+                        "- action: '[OPEN_DOOR]', message: ''\n"
+                        "- action: '[CLOSE_DOOR]', message: ''\n"
+                        "- action: '[TURN_ON_LIGHT]', message: ''\n"
+                        "- action: '[TURN_OFF_LIGHT]', message: ''\n"
+                        "- action: '[TURN_ON_FAN]', message: ''\n"
+                        "- action: '[TURN_OFF_FAN]', message: ''\n"
+                        "- action: '[UNKNOWN_COMMAND]', message: ''\n"
                         "Ensure the response is a valid JSON object. If the command does not match any of the above, set 'action' to 'unknown' and 'message' to an empty string."
                     )
                 },
@@ -118,7 +124,9 @@ def send_audio_to_ai(audio_file_path):
 
         # Extract the command from the response
         if completion.choices and len(completion.choices) > 0:
-            command_json_str = completion.choices[0].message['content'].strip()
+            message_obj = completion.choices[0].message
+            command_json_str = message_obj.content.strip()  # 使用屬性訪問
+            logging.info(f"AI Response: {command_json_str}")  # 日誌記錄 AI 的原始回應
             # Validate JSON
             try:
                 command = json.loads(command_json_str)
@@ -134,6 +142,15 @@ def send_audio_to_ai(audio_file_path):
         else:
             logging.warning("No command recognized from AI API.")
             return {"action": "unknown", "message": ""}
+
+        # Extract the command from the response
+        # if completion.choices and len(completion.choices) > 0:
+        #     command = completion.choices[0].message['content'].strip()
+        #     logging.info(f"Recognized command: {command}")
+        #     return command
+        # else:
+        #     logging.warning("No command recognized from AI API.")
+        #     return "[UNKNOWN_COMMAND]"
 
     except Exception as e:
         logging.error(f"Error sending audio to AI API: {e}")
