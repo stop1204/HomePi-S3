@@ -23,7 +23,9 @@ import datetime
 import RPi.GPIO as GPIO
 import textwrap
 
-from DHT11 import DHT11  # call the customer  library
+# from DHT11 import DHT11  # call the customer  library
+import board
+import adafruit_dht
 GPIO.cleanup()
 
 # GPIO Configuration using gpiozero
@@ -32,7 +34,8 @@ BUTTON_UP_PIN = 23      # Yellow-Up (GPIO 20) -> change to 23
 BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
-DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
+# DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
+dht_device = adafruit_dht.DHT11(board.D2) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
@@ -710,38 +713,67 @@ def check_lcd_command():
                 elif action == '[UNKNOWN_COMMAND]':
                     pass
         time.sleep(1)
-
+# https://blynk.cloud/dashboard/450351/global/devices/1/organization/450351/devices/2663885/dashboard
 def dht11_read():
-    global DHT,current_mode
+    global DHT,current_mode,dht_device,rootpath
+    command_files = [rootpath+'/lcd_command.txt', rootpath+'../lcd_command.txt']
+
     try:
         while True:
-            result = DHT11_PIN.read()
-            if result.is_valid():
-                DHT['temperature'] = result.temperature
-                DHT['humidity'] = result.humidity
+            try:
+                # result = DHT11_PIN.read()
+                temperature = dht_device.temperature
+                humidity = dht_device.humidity
+                if humidity is not None and temperature is not None:
+                    DHT['temperature'] = temperature
+                    DHT['humidity'] = humidity
 
-                # remove the 'C and %'
-                DHT['temperature'] = DHT['temperature'].replace('\'C', '')
-                DHT['humidity'] = DHT['humidity'].replace('%', '')
-                IoTHttp().update(IoTHttp().tag['TEMP'], DHT['temperature'])
-                IoTHttp().update(IoTHttp().tag['HUMIDITY'], DHT['humidity'])
-                print(f"Temp.: {result.temperature}°C, H: {result.humidity}%")
-            else:
-                DHT['error_code'] = result.error_code
-                print(f"DHT11 Error: {result.error_code}")
-                DHT['sys_temp'] = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True, text=True,
-                                                 check=True).stdout.strip().split('=')[1]
-                # System Temp.: 46.2'C
-                # remove the 'C
-                DHT['sys_temp'] = DHT['sys_temp'].replace('\'C', '')
-                IoTHttp().update(IoTHttp().tag['TEMP'], DHT['sys_temp'])
-            if current_mode == "menu":
-                render_menu()
+                    # remove the 'C and %'
+                    DHT['temperature'] = temperature
+                    DHT['humidity'] = humidity
+                    IoTHttp().update(IoTHttp().tag['TEMP'], temperature)
+                    IoTHttp().update(IoTHttp().tag['HUMIDITY'], humidity)
+                    print(f"Temp.: {temperature:.1f}C, H: {humidity:.1f}%")
+                    # if temperature > 28: open the fan
+                    if temperature > 28:
+                        for command_file in command_files:
+                            if os.path.exists(command_file):
+                                with open(command_file, 'w') as f:
+                                    f.write(json.dumps({'action': 'action', 'message': '[TURN_ON_FAN]'}))
+                    elif temperature < 23:
+                        for command_file in command_files:
+                            if os.path.exists(command_file):
+                                with open(command_file, 'w') as f:
+                                    f.write(json.dumps({'action': 'action', 'message': '[TURN_OFF_FAN]'}))
+                else:
+                    # DHT['error_code'] = result.error_code
+                    # print(f"DHT11 Error: {result.error_code}")
+                    print("Failed to retrieve data from sensor")
+                    DHT['error_code'] = 'Read failed'
+                    try:
+                        DHT['sys_temp'] = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True, text=True,
+                                                         check=True).stdout.strip().split('=')[1]
+                        # System Temp.: 46.2'C
+                        # remove the 'C
+                        DHT['sys_temp'] = DHT['sys_temp'].replace('\'C', '')
+                        IoTHttp().update(IoTHttp().tag['TEMP'], DHT['sys_temp'])
+                    except Exception as e:
+                        logging.error(f"Error retrieving system temperature: {e}")
 
+                if current_mode == "menu":
+                    render_menu()
+            except RuntimeError as error:
+                logging.error(f"RuntimeError in DHT11 read thread: {error.args[0]}")
+                time.sleep(2)
+                continue
             time.sleep(2)
 
     except KeyboardInterrupt:
-        print("DHT11 Stopped!")
+        logging.info("DHT11 read thread stopped by user.")
+    except Exception as e:
+        logging.error(f"Unexpected error in DHT11 read thread: {e}")
+    finally:
+        dht_device.exit()
 def door_action(action):
     pass
 def light_action(action):
