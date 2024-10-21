@@ -3,7 +3,7 @@ import board
 import adafruit_dht
 
 # init sensor, use GPIO 26
-dht_device = adafruit_dht.DHT11(board.D26)
+dht_device = adafruit_dht.DHT11(board.D2)
 
 try:
     while True:
