@@ -1,4 +1,3 @@
-# sudo systemctl stop pigpiod
 import RPi.GPIO as GPIO
 btn_pin = 19
 led_pin = 13
