@@ -46,18 +46,18 @@ AUDIO_FORMAT = "opus"
 BITRATE = 16
 
 # GPIO setup
-BUTTON_PIN = 19  # GPIO pin number for the button
-LED_PIN = 13     # GPIO pin number for the LED
+AI_BUTTON_PIN = 19  # GPIO pin number for the button
+AI_LED_PIN = 13     # GPIO pin number for the LED
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set button as input with pull-up resistor
-GPIO.setup(LED_PIN, GPIO.OUT)  # Set LED as output
-def record_audio(filename):
+GPIO.setup(AI_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set button as input with pull-up resistor
+GPIO.setup(AI_LED_PIN, GPIO.OUT)  # Set LED as output
+def ai_record_audio(filename):
     """
     Record audio from the microphone and save it to a WAV file.
     """
     logging.info(f"Recording started: {filename}")
-    GPIO.output(LED_PIN, GPIO.HIGH)  # Turn on LED to indicate recording
+    GPIO.output(AI_LED_PIN, GPIO.HIGH)  # Turn on LED to indicate recording
     try:
         recording = sd.rec(int(RECORD_DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16')
         sd.wait()  # Wait until recording is finished
@@ -68,9 +68,9 @@ def record_audio(filename):
         logging.error(f"Error recording audio: {e}")
         return False
     finally:
-        GPIO.output(LED_PIN, GPIO.LOW)  # Turn off LED after recording
+        GPIO.output(AI_LED_PIN, GPIO.LOW)  # Turn off LED after recording
 
-def send_audio_to_ai(audio_file_path):
+def ai_send_audio_to_ai(audio_file_path):
     """
     Send the audio file to AI API for speech recognition and command parsing.
     """
@@ -156,7 +156,7 @@ def send_audio_to_ai(audio_file_path):
         logging.error(f"Error sending audio to AI API: {e}")
         return {"action": "unknown", "message": ""}
 
-def write_command(command):
+def ai_write_command(command):
     """
     Write the command to the command file in JSON format.
     """
@@ -167,14 +167,14 @@ def write_command(command):
     except Exception as e:
         logging.error(f"Error writing command to file: {e}")
 
-def process_audio_file(audio_directory, filename):
+def ai_process_audio_file(audio_directory, filename):
     """
     Process a single audio file: send to AI and write the command.
     """
     audio_path = os.path.join(audio_directory, filename)
     logging.info(f"Processing audio file: {audio_path}")
-    command = send_audio_to_ai(audio_path)
-    write_command(command)
+    command = ai_send_audio_to_ai(audio_path)
+    ai_write_command(command)
     # Optionally, move or delete the processed audio file
     try:
         os.remove(audio_path)
@@ -182,21 +182,21 @@ def process_audio_file(audio_directory, filename):
     except Exception as e:
         logging.error(f"Error removing audio file '{audio_path}': {e}")
 
-def monitor_button_and_record(audio_directory):
+def ai_monitor_button_and_record(audio_directory):
     """
     Monitor the button and record audio when the button is pressed.
     """
     try:
         while True:
-            button_state = GPIO.input(BUTTON_PIN)
+            button_state = GPIO.input(AI_BUTTON_PIN)
             if button_state == GPIO.LOW:
                 # Button pressed
                 timestamp = int(time.time())
                 filename = f"audio_{timestamp}.wav"
                 audio_path = os.path.join(audio_directory, filename)
-                success = record_audio(audio_path)
+                success = ai_record_audio(audio_path)
                 if success:
-                    process_audio_file(audio_directory, filename)
+                    ai_process_audio_file(audio_directory, filename)
                 # Debounce to prevent multiple recordings
                 time.sleep(1)
             else:
@@ -221,7 +221,7 @@ def main():
     logging.info("Starting command_writer.py...")
 
     # Start monitoring the button and recording audio in the main thread
-    monitor_button_and_record(AUDIO_DIRECTORY)
+    ai_monitor_button_and_record(AUDIO_DIRECTORY)
 
 if __name__ == "__main__":
     main()

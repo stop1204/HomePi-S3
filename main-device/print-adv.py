@@ -4,7 +4,7 @@ import string
 import subprocess
 import sys
 
-import gpiozero
+from PIL.ImageStat import Global
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
 from luma.lcd.device import st7735
@@ -26,6 +26,14 @@ import textwrap
 # from DHT11 import DHT11  # call the customer  library
 import board
 import adafruit_dht
+
+import base64
+import openai
+import sounddevice as sd
+import wavio
+
+
+
 GPIO.cleanup()
 
 # GPIO Configuration using gpiozero
@@ -35,17 +43,35 @@ BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
 # DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
-dht_device = adafruit_dht.DHT11(board.D2) # init sensor, use GPIO 26
+dht_device = adafruit_dht.DHT11(board.D26) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
 # backlight.on() will be called before initialize_menu()
+
+# initialize the Door and LED of door
+DOOR_LED_PIN = 16
+OPEN_DOOR_PIN = 21
+CLOSE_DOOR_PIN = 20
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(DOOR_LED_PIN, GPIO.OUT)
+GPIO.setup(OPEN_DOOR_PIN, GPIO.OUT)
+GPIO.setup(CLOSE_DOOR_PIN, GPIO.OUT)
 
 # Initialize Buttons
 button_up = Button(BUTTON_UP_PIN)        # Yellow-Up
 button_left = Button(BUTTON_LEFT_PIN)    # Red-Left
 button_right = Button(BUTTON_RIGHT_PIN)  # Green-Right
 button_down = Button(BUTTON_DOWN_PIN)    # Blue-Bottom
+
+# Initialize HC-SR04
+GPIO_TRIGGER = 5  # BOARD 29
+GPIO_ECHO = 6     # BOARD 31
+GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
+GPIO.setup(GPIO_ECHO, GPIO.IN)
+automatic_door_mode = 3 # guard mode 2, automatic mode 3, silent mode 4
+BUZZER_PIN = 12
+GPIO.setup(BUZZER_PIN, GPIO.OUT)
 
 # Initialize LCD
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
@@ -55,6 +81,8 @@ time.sleep(0.2)
 
 # Initialize Character Dimensions
 char_width, char_height = 0, 0
+
+
 
 # setup logging
 rootpath = "/home/terry/Desktop/HomePi-S3/"
@@ -91,6 +119,57 @@ selected_wifi_network = None
 
 # Initialize Command Queue
 command_queue = Queue()
+command_files = [rootpath+'/lcd_command.txt', rootpath+'../lcd_command.txt']
+
+
+#========================this is for AI part========================
+
+# Configure OpenAI API key
+LEPTON_API_TOKEN="xhwg2y4dpim3vqu16z8ijtjxk12e93u6"
+# LEPTON_API_TOKEN = os.getenv("LEPTON_API_TOKEN")
+if not LEPTON_API_TOKEN:
+    raise ValueError("Environment variable LEPTON_API_TOKEN must be set")
+
+client = openai.OpenAI(
+    base_url="https://qwen2-72b.lepton.run/api/v1/",
+    api_key=LEPTON_API_TOKEN
+)
+# Audio recording settings
+SAMPLE_RATE = 16000  # Hertz
+CHANNELS = 1
+RECORD_DURATION = 5  # Seconds
+AUDIO_FORMAT = "opus"
+BITRATE = 16
+# GPIO setup
+AI_BUTTON_PIN = 19  # GPIO pin number for the button
+AI_LED_PIN = 13     # GPIO pin number for the LED
+GPIO.setup(AI_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set button as input with pull-up resistor
+GPIO.setup(AI_LED_PIN, GPIO.OUT)  # Set LED as output
+role_system = {
+    "role": "system",
+    "content": (
+        "You are a smart home assistant. Please convert the user's natural language command from the following audio into a JSON object with 'action' and 'message' fields based on the predefined actions below. Return only the JSON object.\n"
+        "Predefined actions:\n"
+        # "- action: 'display', message: <display message>\n"
+        # "- action: 'clear', message: ''\n"
+        # "- action: 'qr_code', message: ''\n"
+        # "- action: 'unknown', message: ''\n"
+        "- action: '[OPEN_DOOR]', message: ''\n"
+        "- action: '[CLOSE_DOOR]', message: ''\n"
+        "- action: '[TURN_ON_LIGHT]', message: ''\n"
+        "- action: '[TURN_OFF_LIGHT]', message: ''\n"
+        "- action: '[TURN_ON_FAN]', message: ''\n"
+        "- action: '[TURN_OFF_FAN]', message: ''\n"
+        "- action: '[GUARD_MODE]', message: ''\n"
+        "- action: '[AUTOMATIC_MODE]', message: ''\n"
+        "- action: '[Silent_Mode]', message: ''\n"
+        "- action: '[UNKNOWN_COMMAND]', message: ''\n"
+        "AUTOMATIC_MODE and Silent_Mode and GUARD_MODE is distance detect mode.\n"
+        "Ensure the response is a valid JSON object. If the command does not match any of the above, set 'action' to 'unknown' and 'message' to an empty string."
+    )
+}
+#==================================END================================
+
 
 
 class ScrollContext:
@@ -659,8 +738,8 @@ button_left.when_pressed = button_back_pressed
 
 # Function to Check and Queue External Commands
 def check_lcd_command():
-    global rootpath
-    command_files = [rootpath+'/lcd_command.txt', rootpath+'../lcd_command.txt']
+    global rootpath,command_files
+
     while True:
         for command_file in command_files:
             if os.path.exists(command_file):
@@ -710,13 +789,22 @@ def check_lcd_command():
                 elif action == '[TURN_OFF_FAN]':
                     logging.info("External command: turn off fan")
                     command_queue.put(('fan', 'off'))
+                elif action == '[GUARD_MODE]':
+                    logging.info("External command: guard mode")
+                    command_queue.put(('guard_mode', ''))
+                elif action == '[AUTOMATIC_MODE]':
+                    logging.info("External command: automatic mode")
+                    command_queue.put(('automatic_mode', ''))
+                elif action == '[Silent_Mode]':
+                    logging.info("External command: silent mode")
+                    command_queue.put(('silent_mode', ''))
                 elif action == '[UNKNOWN_COMMAND]':
                     pass
         time.sleep(1)
 # https://blynk.cloud/dashboard/450351/global/devices/1/organization/450351/devices/2663885/dashboard
 def dht11_read():
-    global DHT,current_mode,dht_device,rootpath
-    command_files = [rootpath+'/lcd_command.txt', rootpath+'../lcd_command.txt']
+    global DHT,current_mode,dht_device,rootpath,command_files
+
 
     try:
         while True:
@@ -736,15 +824,18 @@ def dht11_read():
                     print(f"Temp.: {temperature:.1f}C, H: {humidity:.1f}%")
                     # if temperature > 28: open the fan
                     if temperature > 28:
-                        for command_file in command_files:
-                            if os.path.exists(command_file):
-                                with open(command_file, 'w') as f:
-                                    f.write(json.dumps({'action': 'action', 'message': '[TURN_ON_FAN]'}))
+                        # for command_file in command_files:
+                        #     if os.path.exists(command_file):
+                        #         with open(command_file, 'w') as f:
+                        #             f.write(json.dumps({'action': 'action', 'message': '[TURN_ON_FAN]'}))
+                        fan_action('on')
                     elif temperature < 23:
-                        for command_file in command_files:
-                            if os.path.exists(command_file):
-                                with open(command_file, 'w') as f:
-                                    f.write(json.dumps({'action': 'action', 'message': '[TURN_OFF_FAN]'}))
+                        fan_action('off')
+
+                        # for command_file in command_files:
+                        #     if os.path.exists(command_file):
+                        #         with open(command_file, 'w') as f:
+                        #             f.write(json.dumps({'action': 'action', 'message': '[TURN_OFF_FAN]'}))
                 else:
                     # DHT['error_code'] = result.error_code
                     # print(f"DHT11 Error: {result.error_code}")
@@ -774,12 +865,326 @@ def dht11_read():
         logging.error(f"Unexpected error in DHT11 read thread: {e}")
     finally:
         dht_device.exit()
+
+def measure_distance():
+    """
+    Measure the distance using HC-SR04
+    :return:
+    """
+    # Send a 10us pulse to Trigger
+    GPIO.output(GPIO_TRIGGER, True)
+    time.sleep(0.00001)  # 10 microseconds
+    GPIO.output(GPIO_TRIGGER, False)
+
+    start = time.time()
+
+    # Record the start time when Echo goes high
+    while GPIO.input(GPIO_ECHO) == 0:
+        start = time.time()
+
+    # Record the stop time when Echo goes low
+    while GPIO.input(GPIO_ECHO) == 1:
+        stop = time.time()
+
+    elapsed = stop - start
+
+    distance = (elapsed * 34300) / 2  # Round-trip distance
+
+    return distance
+
+def measure_average_distance():
+    """
+    Measure the average distance over 3 readings with 1-second intervals
+    :return:
+    """
+    distances = []
+    detect_duration = 1  # seconds
+    for _ in range(3):
+        dist = measure_distance()
+        print(f"Dist: {dist}cm")
+        distances.append(dist)
+        time.sleep(detect_duration)
+    average_distance = sum(distances) / len(distances)
+
+    return average_distance
+
+def alert_buzzer():
+    # Alert Buzzer
+    for _ in range(5):
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+        time.sleep(0.2)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        time.sleep(0.2)
+
+def keep_measure_distance():
+    """
+    Guard Mode -> The distance sensor monitors every 1 second. If the average value over three readings is less than 50 cm (default), the alarm buzzer will sound.
+
+    Automatic Mode -> Suitable for public automatic sensor doors, it detects someone approaching and automatically opens the door. Parameter adjustments may be required.
+    :return:
+    """
+    try:
+        global automatic_door_mode
+        limit_distance = 50
+        while True:
+            cm = measure_average_distance()
+            print("Average Distance : %.1f cm" % cm)
+            if cm < limit_distance:
+                if automatic_door_mode==2:
+                    door_action('open')
+                elif automatic_door_mode==1:
+                    # alert
+                    alert_buzzer()
+                else:
+                    # silent mode do nothing
+                    pass
+            else:
+                if automatic_door_mode == 2:
+                    door_action('close')
+
+
+            time.sleep(1)  # Wait for 1 second before next measurement
+    except KeyboardInterrupt:
+        print("\nMeasurement stopped")
+
+# Function to turn LED on
+def door_led_on():
+    """
+    turn on the LED of door
+    :return:
+    """
+    GPIO.output(DOOR_LED_PIN, GPIO.HIGH)
+    print("LED is ON")
+
+# Function to turn LED off
+def door_led_off():
+    """
+    turn off the LED of door
+    :return:
+    """
+    GPIO.output(DOOR_LED_PIN, GPIO.LOW)
+    print("LED is OFF")
 def door_action(action):
-    pass
+    if action == 'open':
+        logging.info("Door opened.")
+        door_led_on()
+        GPIO.output(OPEN_DOOR_PIN, GPIO.HIGH)
+        GPIO.output(CLOSE_DOOR_PIN, GPIO.LOW)
+        print("Door is opening...")
+        time.sleep(2)
+        door_led_off()
+    elif action == 'close':
+        door_led_on()
+        logging.info("Door closed.")
+        GPIO.output(OPEN_DOOR_PIN, GPIO.LOW)
+        GPIO.output(CLOSE_DOOR_PIN, GPIO.HIGH)
+        print("Door is closing...")
+        time.sleep(2)
+
+        door_led_off()
 def light_action(action):
-    pass
+    if action == 'on':
+        logging.info("Light turned on.")
+        GPIO.output(AI_LED_PIN, GPIO.HIGH)
+        print("LED is ON")
+    elif action == 'off':
+        logging.info("Light turned off.")
+        GPIO.output(AI_LED_PIN, GPIO.LOW)
+        print("LED is OFF")
 def fan_action(action):
-    pass
+    if action == 'on':
+        logging.info("Fan turned on.")
+        pass
+        print("Fan is ON")
+    elif action == 'off':
+        logging.info("Fan turned off.")
+        pass
+        print("Fan is OFF")
+
+def ai_record_audio(filename):
+    """
+    Record audio from the microphone and save it to a WAV file.
+    """
+    logging.info(f"Recording started: {filename}")
+    GPIO.output(AI_LED_PIN, GPIO.HIGH)  # Turn on LED to indicate recording
+    try:
+        recording = sd.rec(int(RECORD_DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16')
+        sd.wait()  # Wait until recording is finished
+        wavio.write(filename, recording, SAMPLE_RATE, sampwidth=2)
+        logging.info(f"Recording finished: {filename}")
+        return True
+    except Exception as e:
+        logging.error(f"Error recording audio: {e}")
+        return False
+    finally:
+        GPIO.output(AI_LED_PIN, GPIO.LOW)  # Turn off LED after recording
+
+def ai_send_audio_to_ai(audio_file_path):
+    """
+    Send the audio file to AI API for speech recognition and command parsing.
+    """
+    try:
+        global role_system
+        with open(audio_file_path, "rb") as f:
+            audio_bytes = f.read()
+            audio_data = base64.b64encode(audio_bytes).decode()
+
+        # Define the input and output formats
+        format_ = AUDIO_FORMAT
+        bitrate = BITRATE
+
+        # Create the API request
+        completion = client.chat.completions.create(
+            model="qwen2-72b",
+            extra_body={
+                "tts_audio_format": format_,
+                "tts_audio_bitrate": bitrate,
+                "require_audio": True,
+                "tts_preset_id": "jessica",
+            },
+            messages=[
+                role_system,
+                {
+                    "role": "user",
+                    "content": [{"type": "audio", "data": audio_data}]
+                }
+            ],
+            max_tokens=50,
+            temperature=0,
+            stream=False  # Set stream to False as per your requirement
+        )
+
+        # Extract the command from the response
+        if completion.choices and len(completion.choices) > 0:
+            message_obj = completion.choices[0].message
+            command_json_str = message_obj.content.strip()  # 使用屬性訪問
+            logging.info(f"AI Response: {command_json_str}")  # 日誌記錄 AI 的原始回應
+            # Validate JSON
+            try:
+                command = json.loads(command_json_str)
+                if 'action' in command and 'message' in command:
+                    logging.info(f"Recognized command: {command}")
+                    return command
+                else:
+                    logging.warning("AI response JSON does not contain 'action' and 'message' fields.")
+                    return {"action": "unknown", "message": ""}
+            except json.JSONDecodeError:
+                logging.error("AI response is not valid JSON.")
+                return {"action": "unknown", "message": ""}
+        else:
+            logging.warning("No command recognized from AI API.")
+            return {"action": "unknown", "message": ""}
+
+        # Extract the command from the response
+        # if completion.choices and len(completion.choices) > 0:
+        #     command = completion.choices[0].message['content'].strip()
+        #     logging.info(f"Recognized command: {command}")
+        #     return command
+        # else:
+        #     logging.warning("No command recognized from AI API.")
+        #     return "[UNKNOWN_COMMAND]"
+
+    except Exception as e:
+        logging.error(f"Error sending audio to AI API: {e}")
+        return {"action": "unknown", "message": ""}
+
+def ai_write_command(command):
+    """
+    Write the command to the command file in JSON format.
+    """
+    try:
+        global command_files
+        for command_file in command_files:
+            if os.path.exists(command_file):
+                with open(command_file, "w") as file:
+                    json.dump(command, file)
+        logging.info(f"Command written to file: {command}")
+    except Exception as e:
+        logging.error(f"Error writing command to file: {e}")
+
+def ai_process_audio_file(audio_directory, filename):
+    """
+    Process a single audio file: send to AI and write the command.
+    """
+    audio_path = os.path.join(audio_directory, filename)
+    logging.info(f"Processing audio file: {audio_path}")
+    command = ai_send_audio_to_ai(audio_path)
+    # ai_write_command(command)
+    # we don't need to write the command to file, just call it
+    if command['action'] == 'unknown':
+        logging.warning("Unknown command received.")
+    else:
+        global automatic_door_mode
+        cmd = command['action']
+        payload = command['message']
+        if cmd == '[OPEN_DOOR]':
+            door_action('open')
+        elif cmd == '[CLOSE_DOOR]':
+            door_action('close')
+        elif cmd == '[TURN_ON_LIGHT]':
+            light_action('on')
+        elif cmd == '[TURN_OFF_LIGHT]':
+            light_action('off')
+        elif cmd == '[TURN_ON_FAN]':
+            fan_action('on')
+        elif cmd == '[TURN_OFF_FAN]':
+            fan_action('off')
+        elif cmd == '[GUARD_MODE]':
+            automatic_door_mode = 1
+            logging.info("Guard mode activated.")
+        elif cmd == '[AUTOMATIC_MODE]':
+            automatic_door_mode = 2
+            logging.info("Automatic mode activated.")
+        elif cmd == '[Silent_Mode]':
+            automatic_door_mode = 3
+            logging.info("Silent mode activated.")
+        else:
+            logging.warning(f"Unknown command: {cmd}")
+
+    # Optionally, move or delete the processed audio file
+    try:
+        os.remove(audio_path)
+        logging.info(f"Processed and removed audio file: {audio_path}")
+    except Exception as e:
+        logging.error(f"Error removing audio file '{audio_path}': {e}")
+
+def ai_monitor_button_and_record(audio_directory):
+    """
+    Monitor the button and record audio when the button is pressed.
+    """
+    try:
+        while True:
+            button_state = GPIO.input(AI_BUTTON_PIN)
+            if button_state == GPIO.LOW:
+                # Button pressed
+                timestamp = int(time.time())
+                filename = f"audio_{timestamp}.wav"
+                audio_path = os.path.join(audio_directory, filename)
+                success = ai_record_audio(audio_path)
+                if success:
+                    ai_process_audio_file(audio_directory, filename)
+                # Debounce to prevent multiple recordings
+                time.sleep(1)
+            else:
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        logging.info("command_writer.py terminated by user.")
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+    finally:
+        GPIO.cleanup()
+
+def ai_main():
+    AUDIO_DIRECTORY = "/home/terry/audio_files"  # Replace with your actual audio files directory
+
+    if not os.path.exists(AUDIO_DIRECTORY):
+        os.makedirs(AUDIO_DIRECTORY)
+        logging.info(f"Created audio directory: {AUDIO_DIRECTORY}")
+
+    logging.info("Starting command_writer.py...")
+    GPIO.output(AI_LED_PIN, GPIO.LOW)  # Turn off LED
+    # Start monitoring the button and recording audio in the main thread
+    ai_monitor_button_and_record(AUDIO_DIRECTORY)
 
 # Function to Process Commands from Queue
 # def process_commands():
@@ -832,10 +1237,10 @@ def process_commands():
                 set_mode_action()
                 # render_menu()  # Display "<- Back"
             elif cmd == 'door':
-                # door_action(payload)
+                door_action(payload)
                 logging.info(f"Processed command: door '{payload}'")
             elif cmd == 'light':
-                # light_action(payload)
+                light_action(payload)
                 logging.info(f"Processed command: light '{payload}'")
             elif cmd == 'fan':
                 # fan_action(payload)
@@ -879,6 +1284,8 @@ def initialize_menu():
 threading.Thread(target=check_lcd_command, daemon=True).start()
 threading.Thread(target=process_commands, daemon=True).start()
 threading.Thread(target=dht11_read, daemon=True).start()
+threading.Thread(target=keep_measure_distance, daemon=True).start()
+threading.Thread(target=ai_main, daemon=True).start()
 
 # Initialize Menu and Render Initial Display
 initialize_menu()

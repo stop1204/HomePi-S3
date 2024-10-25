@@ -5,6 +5,11 @@ import azure.cognitiveservices.speech as speechsdk
 import os
 
 class SpeechRecognizerHandler:
+    """
+    Class to handle speech recognition using Azure Speech SDK
+    and GPIO button press events on Raspberry Pi.
+    default button_pin = 19, led_pin = 13, timeout_duration = 10
+    """
     def __init__(self, button_pin=19, led_pin=13, timeout_duration=10):
         # GPIO setup
         self.BUTTON_PIN = button_pin
