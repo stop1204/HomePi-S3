@@ -8,7 +8,7 @@ from PIL.ImageStat import Global
 from anyio import sleep
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
-from luma.lcd.device import st7735
+# from luma.lcd.device import st7735
 from PIL import Image, ImageDraw, ImageFont
 from signal import pause
 import threading
@@ -32,8 +32,8 @@ import base64
 import openai
 import sounddevice as sd
 import wavio
-
-
+import digitalio
+import adafruit_rgb_display.st7735 as st7735
 # turn to normal permission, because the AI function does not need the root permission
 #rc.lcoal: su - terry -c "python3 /home/terry/Desktop/HomePi-S3/main-device/print.py &"
 
@@ -53,7 +53,7 @@ BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
 time.sleep(0.2)
 # DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
-dht_device = adafruit_dht.DHT11(board.D26,use_pulseio=False) # init sensor, use GPIO 26
+dht_device = adafruit_dht.DHT11(board.D26,use_pulseio=True) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
@@ -88,10 +88,21 @@ FAN_PIN = 14
 GPIO.setup(FAN_PIN, GPIO.OUT)
 
 # Initialize LCD
-serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
-device = st7735(serial, width=160, height=128, rotate=1)
-
-time.sleep(0.2)
+# serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=24000000)
+# device = st7735(serial, width=160, height=128, rotate=1)
+cs_pin = digitalio.DigitalInOut(board.D8)
+dc_pin = digitalio.DigitalInOut(board.D24)
+reset_pin = digitalio.DigitalInOut(board.D18)
+BAUDRATE = 24000000 #24MHz
+spi = board.SPI()
+device = st7735.ST7735R(
+    spi,
+    rotation=0,
+    cs=cs_pin,
+    dc=dc_pin,
+    rst=reset_pin,
+    baudrate=BAUDRATE
+)
 
 # Initialize Character Dimensions
 char_width, char_height = 0, 0
@@ -426,7 +437,8 @@ def calculate_screen_size():
 # Function to Clear Display
 def clear_display():
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
-    device.display(image)
+    device.image(image)
+
     print("Display cleared")
 
 # Function to Update Display with a Message
@@ -435,7 +447,7 @@ def update_display(msg="", xy=(10,10), fill=ColorPalette.WHITE.value):
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     draw.multiline_text(xy=xy, text=msg, font=font, fill=fill)
-    device.display(image)
+    device.image(image)
     print("Display updated")
 
 # Function to Toggle Backlight
@@ -555,7 +567,7 @@ def display_qr_code_on_lcd(svg_data):
     image = Image.open(io.BytesIO(png_data))
     # Resize Image to Fit LCD
     image = image.resize((device.width, device.height))
-    device.display(image)
+    device.image(image)
     print("QR code displayed on LCD.")
 
 # Function to Render the Menu on LCD
@@ -598,6 +610,7 @@ def render_menu():
         instruction = "Select -> "
         if DHT.get('temperature') is not None:
             instruction += f"{DHT['temperature']}°C,H:{DHT['humidity']}%"
+
         else:
 
             # instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
@@ -608,7 +621,7 @@ def render_menu():
     #     # Assuming the action has already updated the display
     #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
-    device.display(image)
+    device.image(image)
 
 def render_scrolling_display():
     global scroll_context, current_mode
@@ -636,7 +649,7 @@ def render_scrolling_display():
     instruction = "<- Back"
     draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
 
-    device.display(image)
+    device.image(image)
     logging.info("Scrolling display rendered.")
 # Function to Handle Menu Actions
 def handle_menu_action(action):
@@ -818,8 +831,6 @@ def check_lcd_command():
 # https://blynk.cloud/dashboard/450351/global/devices/1/organization/450351/devices/2663885/dashboard
 def dht11_read():
     global DHT,current_mode,dht_device,rootpath,command_files
-
-
     try:
         while True:
             try:
@@ -833,9 +844,9 @@ def dht11_read():
                     # remove the 'C and %'
                     DHT['temperature'] = temperature
                     DHT['humidity'] = humidity
+                    print(f"Temp.: {temperature:.1f}C, H: {humidity:.1f}%")
                     IoTHttp().update(IoTHttp().tag['TEMP'], temperature)
                     IoTHttp().update(IoTHttp().tag['HUMIDITY'], humidity)
-                    print(f"Temp.: {temperature:.1f}C, H: {humidity:.1f}%")
                     # if temperature > 28: open the fan
                     if temperature > 28:
                         # for command_file in command_files:
@@ -857,6 +868,7 @@ def dht11_read():
                     print("Failed to retrieve data from sensor")
                     DHT['error_code'] = 'Read failed'
                     try:
+                        print("Retrying DHT11 read...")
                         DHT['sys_temp'] = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True, text=True,
                                                          check=True).stdout.strip().split('=')[1]
                         # System Temp.: 46.2'C
@@ -864,11 +876,13 @@ def dht11_read():
                         DHT['sys_temp'] = DHT['sys_temp'].replace('\'C', '')
                         IoTHttp().update(IoTHttp().tag['TEMP'], DHT['sys_temp'])
                     except Exception as e:
+                        print(f"Error retrieving system temperature: {e}")
                         logging.error(f"Error retrieving system temperature: {e}")
 
                 if current_mode == "menu":
                     render_menu()
             except RuntimeError as error:
+                print(f"RuntimeError in DHT11 read thread: {error.args[0]}")
                 logging.error(f"RuntimeError in DHT11 read thread: {error.args[0]}")
                 time.sleep(2)
                 continue
