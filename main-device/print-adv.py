@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from PIL.ImageStat import Global
+from anyio import sleep
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
 from luma.lcd.device import st7735
@@ -33,17 +34,26 @@ import sounddevice as sd
 import wavio
 
 
+# turn to normal permission, because the AI function does not need the root permission
+#rc.lcoal: su - terry -c "python3 /home/terry/Desktop/HomePi-S3/main-device/print.py &"
 
 GPIO.cleanup()
 
+
+
+# 接著是主程序邏輯
+# 例如：
+print("Running as user:", os.getuid())
+GPIO.setmode(GPIO.BCM)
 # GPIO Configuration using gpiozero
 BACKLIGHT_PIN = 18      # Backlight controlled via GPIO 18
 BUTTON_UP_PIN = 23      # Yellow-Up (GPIO 20) -> change to 23
 BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
+time.sleep(0.2)
 # DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
-dht_device = adafruit_dht.DHT11(board.D26) # init sensor, use GPIO 26
+dht_device = adafruit_dht.DHT11(board.D26,use_pulseio=False) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
@@ -72,6 +82,10 @@ GPIO.setup(GPIO_ECHO, GPIO.IN)
 automatic_door_mode = 3 # guard mode 2, automatic mode 3, silent mode 4
 BUZZER_PIN = 12
 GPIO.setup(BUZZER_PIN, GPIO.OUT)
+
+# Initialize FAN
+FAN_PIN = 14
+GPIO.setup(FAN_PIN, GPIO.OUT)
 
 # Initialize LCD
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=36000000)
@@ -595,7 +609,7 @@ def render_menu():
     #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
     device.display(image)
-    
+
 def render_scrolling_display():
     global scroll_context, current_mode
     if not scroll_context:
@@ -829,9 +843,10 @@ def dht11_read():
                         #         with open(command_file, 'w') as f:
                         #             f.write(json.dumps({'action': 'action', 'message': '[TURN_ON_FAN]'}))
                         fan_action('on')
+                        logging.info("Fan turned on.")
                     elif temperature < 23:
                         fan_action('off')
-
+                        logging.info("Fan turned off.")
                         # for command_file in command_files:
                         #     if os.path.exists(command_file):
                         #         with open(command_file, 'w') as f:
@@ -985,20 +1000,22 @@ def door_action(action):
 def light_action(action):
     if action == 'on':
         logging.info("Light turned on.")
+        door_led_on()
         GPIO.output(AI_LED_PIN, GPIO.HIGH)
         print("LED is ON")
     elif action == 'off':
         logging.info("Light turned off.")
+        door_led_off()
         GPIO.output(AI_LED_PIN, GPIO.LOW)
         print("LED is OFF")
 def fan_action(action):
     if action == 'on':
         logging.info("Fan turned on.")
-        pass
+        GPIO.output(FAN_PIN, GPIO.HIGH)
         print("Fan is ON")
     elif action == 'off':
         logging.info("Fan turned off.")
-        pass
+        GPIO.output(FAN_PIN, GPIO.LOW)
         print("Fan is OFF")
 
 def ai_record_audio(filename):
@@ -1057,8 +1074,9 @@ def ai_send_audio_to_ai(audio_file_path):
         # Extract the command from the response
         if completion.choices and len(completion.choices) > 0:
             message_obj = completion.choices[0].message
-            command_json_str = message_obj.content.strip()  # 使用屬性訪問
-            logging.info(f"AI Response: {command_json_str}")  # 日誌記錄 AI 的原始回應
+            command_json_str = message_obj.content.strip()  # use content instead of message
+            print(f"AI Response: {command_json_str}")  #  print AI response
+            logging.info(f"AI Response: {command_json_str}")  # print AI response
             # Validate JSON
             try:
                 command = json.loads(command_json_str)
@@ -1243,7 +1261,7 @@ def process_commands():
                 light_action(payload)
                 logging.info(f"Processed command: light '{payload}'")
             elif cmd == 'fan':
-                # fan_action(payload)
+                fan_action(payload)
                 logging.info(f"Processed command: fan '{payload}'")
 
         time.sleep(0.1)
@@ -1258,9 +1276,7 @@ def initialize_menu():
     time.sleep(0.1)
     backlight.on()
     time.sleep(0.1)
-    backlight.off()
-    time.sleep(0.1)
-    backlight.on()
+
     # hostname -I
     # example: 192.168.50.254 192.168.0.1 fd3a:cce6:35f6:b144:ba27:ebff:fe92:556a fd3a:cce6:35f6:b144:1453:384:c821:781
     result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, check=True)
@@ -1278,17 +1294,19 @@ def initialize_menu():
             BT[parts[0].strip()] = parts[1].strip()
 
     calculate_screen_size() # this will set char_width and char_height,must be exist
+    time.sleep(0.1)
+
     render_menu()
 
+
+
+# Initialize Menu and Render Initial Display
+initialize_menu()
 # Start Threads for Command Checking and Processing
 threading.Thread(target=check_lcd_command, daemon=True).start()
 threading.Thread(target=process_commands, daemon=True).start()
 threading.Thread(target=dht11_read, daemon=True).start()
 threading.Thread(target=keep_measure_distance, daemon=True).start()
 threading.Thread(target=ai_main, daemon=True).start()
-
-# Initialize Menu and Render Initial Display
-initialize_menu()
-
 print("Menu system initialized. Waiting for button presses...")
 pause()
