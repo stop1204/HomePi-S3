@@ -52,7 +52,7 @@ BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
 # DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
-dht_device = adafruit_dht.DHT11(board.D26) # init sensor, use GPIO 26
+dht_device = adafruit_dht.DHT11(board.D26,use_pulseio=True) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
