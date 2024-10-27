@@ -572,57 +572,60 @@ def display_qr_code_on_lcd(svg_data):
 
 # Function to Render the Menu on LCD
 def render_menu():
-    global current_mode
-    set_mode_menu()
-    image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    # font = ImageFont.truetype("/user/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf", 12)
+    try:
+        global current_mode
+        set_mode_menu()
+        image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default()
+        # font = ImageFont.truetype("/user/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf", 12)
 
-    # if current_mode == "menu":
-    menu_items = menu.get_display_items()
-    for idx, item in enumerate(menu_items):
-        if idx == menu.selected_index:
-            # fill = ColorPalette.YELLOW.value  # Highlighted item color
-            background_color = ColorPalette.BLUE.value
-            text_color = ColorPalette.WHITE.value
+        # if current_mode == "menu":
+        menu_items = menu.get_display_items()
+        for idx, item in enumerate(menu_items):
+            if idx == menu.selected_index:
+                # fill = ColorPalette.YELLOW.value  # Highlighted item color
+                background_color = ColorPalette.BLUE.value
+                text_color = ColorPalette.WHITE.value
+            else:
+                # fill = ColorPalette.WHITE.value
+                # fill = ColorPalette.YELLOW.value  # Highlighted item color
+                background_color = ColorPalette.BLACK.value
+                text_color = ColorPalette.WHITE.value
+
+            y_position = idx * char_height
+            # Ensure text is within display bounds
+            if y_position + char_height < device.height - char_height:
+                # draw.text((10, y_position), item, font=font, fill=fill)
+                # background
+                draw.rectangle(
+                    [(0, y_position), (device.width, y_position + char_height)],
+                    fill=background_color
+                )
+                # text
+                draw.text((10, y_position), item, font=font, fill=text_color)
+
+        # Display operation instructions on the last line
+        if menu.history:
+            instruction = "<- Back"
         else:
-            # fill = ColorPalette.WHITE.value
-            # fill = ColorPalette.YELLOW.value  # Highlighted item color
-            background_color = ColorPalette.BLACK.value
-            text_color = ColorPalette.WHITE.value
+            instruction = "Select -> "
+            if DHT.get('temperature') is not None:
+                instruction += f"{DHT['temperature']}°C,H:{DHT['humidity']}%"
 
-        y_position = idx * char_height
-        # Ensure text is within display bounds
-        if y_position + char_height < device.height - char_height:
-            # draw.text((10, y_position), item, font=font, fill=fill)
-            # background
-            draw.rectangle(
-                [(0, y_position), (device.width, y_position + char_height)],
-                fill=background_color
-            )
-            # text
-            draw.text((10, y_position), item, font=font, fill=text_color)
+            else:
 
-    # Display operation instructions on the last line
-    if menu.history:
-        instruction = "<- Back"
-    else:
-        instruction = "Select -> "
-        if DHT.get('temperature') is not None:
-            instruction += f"{DHT['temperature']}°C,H:{DHT['humidity']}%"
+                # instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
+                instruction += "Sys:{}".format(DHT.get('sys_temp', '-1'))
+        draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
+        # elif current_mode == "action":
+        #     # In action mode, just display the action content and "<- Back"
+        #     # Assuming the action has already updated the display
+        #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
-        else:
-
-            # instruction += "N/A,Err:{}".format(DHT.get('error_code', '-1'))
-            instruction += "Sys:{}".format(DHT.get('sys_temp', '-1'))
-    draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
-    # elif current_mode == "action":
-    #     # In action mode, just display the action content and "<- Back"
-    #     # Assuming the action has already updated the display
-    #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
-
-    device.display(image)
+        device.display(image)
+    except Exception as e:
+        logging.error(f"Error rendering menu: {e}")
 
 def render_scrolling_display():
     global scroll_context, current_mode
