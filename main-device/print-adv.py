@@ -43,17 +43,16 @@ GPIO.cleanup()
 
 # 接著是主程序邏輯
 # 例如：
-print("Running as user:", os.getuid())
-GPIO.setmode(GPIO.BCM)
+# print("Running as user:", os.getuid())
+# GPIO.setmode(GPIO.BCM)
 # GPIO Configuration using gpiozero
 BACKLIGHT_PIN = 18      # Backlight controlled via GPIO 18
 BUTTON_UP_PIN = 23      # Yellow-Up (GPIO 20) -> change to 23
 BUTTON_LEFT_PIN = 17    # Red-Left (GPIO 17)
 BUTTON_RIGHT_PIN = 22   # Green-Right (GPIO 16) -> change to 22
 BUTTON_DOWN_PIN = 27    # Blue-Bottom (GPIO 21) -> change to 27
-time.sleep(0.2)
 # DHT11_PIN = DHT11(pin=26)      # GPIO 26，physical pin 37
-dht_device = adafruit_dht.DHT11(board.D26,use_pulseio=True) # init sensor, use GPIO 26
+dht_device = adafruit_dht.DHT11(board.D26) # init sensor, use GPIO 26
 
 # Initialize Backlight LED
 backlight = LED(BACKLIGHT_PIN)
@@ -311,7 +310,7 @@ class IoTHttp:
         self.tag = {
             "LED": 0,
             "DOOR": 1,
-            "CURTAIN": 2,
+            "FAN": 2,
             "HUMIDITY": 3,
             "TEMP": 4}
 
@@ -577,6 +576,7 @@ def render_menu():
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
+    # font = ImageFont.truetype("/user/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf", 12)
 
     # if current_mode == "menu":
     menu_items = menu.get_display_items()
@@ -886,6 +886,23 @@ def dht11_read():
                 logging.error(f"RuntimeError in DHT11 read thread: {error.args[0]}")
                 time.sleep(2)
                 continue
+
+            # GET IOT DATA
+
+            # if IoTHttp().get(IoTHttp().tag['LED']) == 1:
+            #     light_action('on')
+            # else:
+            #     light_action('off')
+            # if IoTHttp().get(IoTHttp().tag['DOOR']) == 1:
+            #     door_action('open')
+            # else:
+            #     door_action('close')
+            #
+            # if IoTHttp().get(IoTHttp().tag['FAN']) == 1:
+            #     fan_action('on')
+            # else:
+            #     fan_action('off')
+
             time.sleep(2)
 
     except KeyboardInterrupt:
@@ -1001,6 +1018,7 @@ def door_action(action):
         GPIO.output(CLOSE_DOOR_PIN, GPIO.LOW)
         print("Door is opening...")
         time.sleep(2)
+        IoTHttp().update(IoTHttp().tag['DOOR'], 1)
         door_led_off()
     elif action == 'close':
         door_led_on()
@@ -1009,6 +1027,7 @@ def door_action(action):
         GPIO.output(CLOSE_DOOR_PIN, GPIO.HIGH)
         print("Door is closing...")
         time.sleep(2)
+        IoTHttp().update(IoTHttp().tag['DOOR'], 0)
 
         door_led_off()
 def light_action(action):
@@ -1016,20 +1035,24 @@ def light_action(action):
         logging.info("Light turned on.")
         door_led_on()
         GPIO.output(AI_LED_PIN, GPIO.HIGH)
+        IoTHttp().update(IoTHttp().tag['LED'], 1)
         print("LED is ON")
     elif action == 'off':
         logging.info("Light turned off.")
         door_led_off()
         GPIO.output(AI_LED_PIN, GPIO.LOW)
+        IoTHttp().update(IoTHttp().tag['LED'], 0)
         print("LED is OFF")
 def fan_action(action):
     if action == 'on':
         logging.info("Fan turned on.")
         GPIO.output(FAN_PIN, GPIO.HIGH)
+        IoTHttp().update(IoTHttp().tag['FAN'], 1)
         print("Fan is ON")
     elif action == 'off':
         logging.info("Fan turned off.")
         GPIO.output(FAN_PIN, GPIO.LOW)
+        IoTHttp().update(IoTHttp().tag['FAN'], 0)
         print("Fan is OFF")
 
 def ai_record_audio(filename):
@@ -1309,13 +1332,16 @@ def initialize_menu():
 
     calculate_screen_size() # this will set char_width and char_height,must be exist
     time.sleep(0.1)
-
     render_menu()
+    backlight.off()
+    time.sleep(0.1)
+    backlight.on()
+    time.sleep(0.1)
 
 
 
-# Initialize Menu and Render Initial Display
 initialize_menu()
+# Initialize Menu and Render Initial Display
 # Start Threads for Command Checking and Processing
 threading.Thread(target=check_lcd_command, daemon=True).start()
 threading.Thread(target=process_commands, daemon=True).start()
