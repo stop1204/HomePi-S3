@@ -8,7 +8,7 @@ from PIL.ImageStat import Global
 from anyio import sleep
 from gpiozero import LED, Button
 from luma.core.interface.serial import spi
-# from luma.lcd.device import st7735
+from luma.lcd.device import st7735
 from PIL import Image, ImageDraw, ImageFont
 from signal import pause
 import threading
@@ -33,7 +33,7 @@ import openai
 import sounddevice as sd
 import wavio
 import digitalio
-import adafruit_rgb_display.st7735 as st7735
+# import adafruit_rgb_display.st7735 as st7735
 # turn to normal permission, because the AI function does not need the root permission
 #rc.lcoal: su - terry -c "python3 /home/terry/Desktop/HomePi-S3/main-device/print.py &"
 
@@ -87,21 +87,22 @@ FAN_PIN = 14
 GPIO.setup(FAN_PIN, GPIO.OUT)
 
 # Initialize LCD
-# serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=24000000)
-# device = st7735(serial, width=160, height=128, rotate=1)
+serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25, bus_speed_hz=16000000)
+device = st7735(serial, width=160, height=128, rotate=1)
 cs_pin = digitalio.DigitalInOut(board.D8)
 dc_pin = digitalio.DigitalInOut(board.D24)
 reset_pin = digitalio.DigitalInOut(board.D18)
-BAUDRATE = 24000000 #24MHz
-spi = board.SPI()
-device = st7735.ST7735R(
-    spi,
-    rotation=0,
-    cs=cs_pin,
-    dc=dc_pin,
-    rst=reset_pin,
-    baudrate=BAUDRATE
-)
+# BAUDRATE = 24000000 #24MHz
+# spi = board.SPI()
+# device = st7735.ST7735R(
+#     spi,
+#     rotation=0,
+#     cs=cs_pin,
+#     dc=dc_pin,
+#     rst=reset_pin,
+#     baudrate=BAUDRATE
+# )
+print(device.width,device.height)
 
 # Initialize Character Dimensions
 char_width, char_height = 0, 0
@@ -436,7 +437,7 @@ def calculate_screen_size():
 # Function to Clear Display
 def clear_display():
     image = Image.new("RGB", (device.width, device.height), ColorPalette.BLACK.value)
-    device.image(image)
+    device.display(image)
 
     print("Display cleared")
 
@@ -446,7 +447,7 @@ def update_display(msg="", xy=(10,10), fill=ColorPalette.WHITE.value):
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
     draw.multiline_text(xy=xy, text=msg, font=font, fill=fill)
-    device.image(image)
+    device.display(image)
     print("Display updated")
 
 # Function to Toggle Backlight
@@ -566,7 +567,7 @@ def display_qr_code_on_lcd(svg_data):
     image = Image.open(io.BytesIO(png_data))
     # Resize Image to Fit LCD
     image = image.resize((device.width, device.height))
-    device.image(image)
+    device.display(image)
     print("QR code displayed on LCD.")
 
 # Function to Render the Menu on LCD
@@ -621,7 +622,7 @@ def render_menu():
     #     # Assuming the action has already updated the display
     #     draw.text((0, device.height - char_height), "<- Back", font=font, fill=ColorPalette.CYAN.value)
 
-    device.image(image)
+    device.display(image)
 
 def render_scrolling_display():
     global scroll_context, current_mode
@@ -649,7 +650,7 @@ def render_scrolling_display():
     instruction = "<- Back"
     draw.text((0, device.height - char_height), instruction, font=font, fill=ColorPalette.CYAN.value)
 
-    device.image(image)
+    device.display(image)
     logging.info("Scrolling display rendered.")
 # Function to Handle Menu Actions
 def handle_menu_action(action):
