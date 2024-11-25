@@ -1,3 +1,4 @@
+terry@terry:~ $ cat /etc/rc.local
 #!/bin/bash -e
 ##!/bin/sh -e
 #
@@ -17,6 +18,15 @@ _IP=$(hostname -I) || true
 if [ "$_IP" ]; then
   printf "My IP address is %s\n" "$_IP"
 fi
+
+
+export SPEECH_KEY=c993ba5df13f4086aa3c6c49f0ba55e1
+export SPEECH_REGION=japaneast
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+
+
+
 echo "start nohup"
 > /home/terry/Desktop/HomePi-S3/nohup.out
 echo "write nohup"
