@@ -36,7 +36,7 @@ The project includes a pre-configured `rc.local` file to handle the startup proc
 * `app.py`: 📜 Main application script that runs the core functionality.
 * `natapp_monitor.sh`: 📜 Shell script to monitor and manage the natapp tunnel.
 
-* `print-adv.py`: 🖨️ Handles printing operations, also known as print.py.
+* `print.py`: 🖨️ Handles printing operations, also known as print.py.
 
 * `rc.local`: ⚙️ The startup script executed at boot to set up the system environment. It performs the following:
 
